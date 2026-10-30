@@ -10,7 +10,7 @@ use cihub_domain::{
 };
 use cihub_mq_core::Merge;
 use cihub_platform::{Job, MAX_ATTEMPTS, error_chain};
-use cihub_scm::{PrMerge, PrSnapshot, Scm, ScmError, check_passed};
+use cihub_scm::{PrMerge, PrSnapshot, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -281,7 +281,7 @@ async fn direct_merge_possible(
         Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
     };
 
-    Ok(names.iter().all(|name| check_passed(pr, name)))
+    Ok(names.iter().all(|name| pr.has_passed(name)))
 }
 
 /// What the merge of an item needs from it.

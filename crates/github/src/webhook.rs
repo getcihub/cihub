@@ -8,8 +8,10 @@ use serde_json::Value;
 
 use crate::signature::verify_signature;
 
+/// Where GitHub sends the webhook deliveries of the App.
 pub const WEBHOOK_PATH: &str = "/webhooks/github";
 
+/// A delivery whose signature is valid, before its translation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReceivedDelivery {
     /// `X-GitHub-Delivery`: a copy of a delivery has the same.
@@ -19,6 +21,7 @@ pub struct ReceivedDelivery {
     pub payload: Value,
 }
 
+/// Why a delivery is refused.
 #[derive(Debug, thiserror::Error)]
 pub enum WebhookError {
     #[error("the signature of the delivery is not valid")]

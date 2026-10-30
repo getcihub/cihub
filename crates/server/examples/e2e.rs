@@ -329,7 +329,7 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
         sim.add_repo(&repo, "main", &files);
         let rules = RequiredChecks {
             names: [REQUIRED.to_owned()].into(),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
         sim.set_rules(&repo, "main", rules)?;
         sim.set_permission(&repo, &ada, Permission::Write)?;

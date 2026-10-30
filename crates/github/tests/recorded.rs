@@ -19,9 +19,9 @@ use cihub_domain::{ConnectionId, JobClass, MembershipRole, MergeMethod, Permissi
 use cihub_github::{GithubApp, GithubConfig, SignInClient};
 use cihub_scm::contract;
 use cihub_scm::{
-    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmAccountProfile, ScmError,
-    ScmInstallation, ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding,
-    SignInCode, SignInRequest,
+    AppCalls, ConnectionRef, PersonCalls, PrMerge, RecentDelivery, RepoCalls, RepoRef, ScmAccount,
+    ScmAccountProfile, ScmError, ScmInstallation, ScmMember, ScmMembership, ScmProfile, ScmRepo,
+    ScmUser, SetupFinding, SignInCode, SignInRequest,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
@@ -129,8 +129,8 @@ async fn a_rate_limit_pauses_the_connection_until_its_reset() {
     replay.finish();
 }
 
-/// Written by hand from `specs/RELIABILITY.md`: three failures in a row on
-/// the connection, on the token endpoint too, and the connection probes.
+/// Written by hand: three failures in a row on the connection, on the token
+/// endpoint too, and the connection probes.
 #[tokio::test]
 async fn failures_of_the_token_endpoint_make_the_connection_unavailable() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
@@ -160,6 +160,68 @@ async fn failures_of_the_token_endpoint_make_the_connection_unavailable() {
         probed,
         Err(ScmError::Unavailable("waiting for the next probe".into())),
         "the connection waits for its probe without a call"
+    );
+    replay.finish();
+}
+
+#[tokio::test]
+async fn a_rate_limit_on_the_token_endpoint_is_not_a_lost_access() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let reset = now + Duration::minutes(15);
+    let limited = Exchange {
+        method: "POST".into(),
+        path: "/app/installations/7/access_tokens".into(),
+        request: None,
+        status: 403,
+        headers: BTreeMap::from([
+            ("x-ratelimit-remaining".into(), "0".into()),
+            (
+                "x-ratelimit-reset".into(),
+                reset.unix_timestamp().to_string(),
+            ),
+        ]),
+        body: Some(json!({ "message": "API rate limit exceeded" })),
+        text: None,
+    };
+    let replay = Replay::start(vec![limited]).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+
+    let read = app.branch_head(&repo, "main", JobClass::Merge).await;
+
+    assert_eq!(read, Err(ScmError::RateLimited { until: reset }));
+    assert_eq!(app.take_changed_budgets()[0].1.paused_until, Some(reset));
+    replay.finish();
+}
+
+/// A token that GitHub gives back proves that GitHub answers: the failures
+/// before it no longer count.
+#[tokio::test]
+async fn a_token_resets_the_failures_of_the_connection() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let failing = answer(
+        "POST",
+        "/app/installations/7/access_tokens",
+        502,
+        json!({ "message": "bad gateway" }),
+    );
+    let head = answer(
+        "GET",
+        "/repos/acme/app/git/ref/heads/main",
+        502,
+        json!({ "message": "bad gateway" }),
+    );
+    let replay = Replay::start(vec![failing, token("7", now), head]).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+    let _ = app.branch_head(&repo, "main", JobClass::Repair).await;
+
+    let _ = app.branch_head(&repo, "main", JobClass::Repair).await;
+
+    assert_eq!(
+        app.take_changed_budgets()[0].1.failures,
+        1,
+        "only the failure after the token counts"
     );
     replay.finish();
 }

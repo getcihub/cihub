@@ -8,7 +8,7 @@ use std::time::Duration;
 use cihub_conditions::{Attribute, Check, Conditions, Context};
 use cihub_config::{ProfileConfig, RepoConfig};
 use cihub_domain::{BranchProtectionInjection, JobClass, Mergeability, Permission, Priority};
-use cihub_scm::{PrSnapshot, RequiredChecks, Scm, check_passed};
+use cihub_scm::{PrSnapshot, RequiredChecks, Scm};
 use time::OffsetDateTime;
 
 use crate::jobs::{Failure, is_own_context};
@@ -35,9 +35,9 @@ fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Condit
 fn context(pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
     let list = |set: &std::collections::BTreeSet<String>| set.iter().cloned().collect();
     Context {
-        draft: pr.draft,
+        draft: pr.is_draft,
         conflict: pr.mergeability == Mergeability::Conflict,
-        from_fork: pr.from_fork,
+        from_fork: pr.is_from_fork,
         behind_base: pr.mergeability == Mergeability::Behind,
         number: pr.number,
         title: pr.title.clone(),
@@ -111,7 +111,7 @@ fn injected(pr: &PrSnapshot, reading: &Reading<'_>) -> Vec<String> {
         .rules
         .names
         .iter()
-        .filter(|name| !is_own_context(name) && !check_passed(pr, name))
+        .filter(|name| !is_own_context(name) && !pr.has_passed(name))
         .map(|name| format!("checks.success: {name}"))
         .collect()
 }
@@ -234,7 +234,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_domain::ReviewDecision;
-    use cihub_scm::sim::Sim;
+    use cihub_scm::sim::{ScmMethod, Sim};
 
     use super::*;
     use crate::target::{test_pr, test_target};
@@ -252,7 +252,7 @@ mod tests {
                 "lint".to_owned(),
                 crate::jobs::queue_status_context("main"),
             ]),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
         let config = target.config().unwrap();
         let settings = target.settings_in(config.as_ref()).unwrap();
@@ -313,7 +313,7 @@ priority_rules:
         pr.number = sim.open_pr(&target.repo, "feat", "main", &author).unwrap();
         let rules = RequiredChecks {
             names: BTreeSet::new(),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
         let reading = Reading {
             sender: &Sender::default(),
@@ -334,7 +334,7 @@ priority_rules:
         let reads = sim
             .calls()
             .iter()
-            .filter(|call| call.name == "pr_files")
+            .filter(|call| call.method == ScmMethod::PrFiles)
             .count();
         assert_eq!(reads, 1);
     }

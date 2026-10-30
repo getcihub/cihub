@@ -17,6 +17,7 @@ pub fn verify_signature(secret: &SecretString, body: &[u8], header: Option<&str>
     hmac::verify(&key, body, &tag).is_ok()
 }
 
+/// The bytes of a hexadecimal text, or `None` if it is not one.
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) {
         return None;

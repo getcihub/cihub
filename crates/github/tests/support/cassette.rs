@@ -58,7 +58,7 @@ impl World {
             base_branch: self.base_branch.clone(),
             required: RequiredChecks {
                 names: self.required_checks.clone(),
-                up_to_date: self.up_to_date,
+                requires_up_to_date: self.up_to_date,
             },
             file: (self.file_path.clone(), self.file_content.clone()),
             mergeable_pr: self.mergeable_pr,

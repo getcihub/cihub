@@ -211,7 +211,7 @@ fn resubmission(
     submission: &Submission,
 ) -> Option<(Actor, EventKind)> {
     let pushed = pr.state == PrState::Open
-        && !pr.draft
+        && !pr.is_draft
         && pr.base_branch == target.target_branch
         && pr.head_sha != submission.head_sha;
     let labelled =

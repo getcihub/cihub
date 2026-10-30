@@ -23,8 +23,8 @@ use cihub_platform::{
     sync_installation_job, sync_members_job, sync_repos_job, sync_user_job, token_of_person,
     until_next_tick,
 };
-use cihub_scm::Scm;
-use cihub_scm::sim::{Fault, Sim};
+use cihub_scm::PersonCalls;
+use cihub_scm::sim::{Fault, ScmMethod, Sim};
 use cihub_scm::{
     ConnectionRef, RepoRef, ScmAccount, ScmAccountProfile, ScmDelivery, ScmError, ScmEvent,
     ScmInstallation, ScmMembership, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest,
@@ -2046,7 +2046,7 @@ async fn a_token_that_ends_is_refreshed_once(pool: PgPool) {
     let refreshes = || {
         sim.calls()
             .iter()
-            .filter(|call| call.name == "refresh_person_token")
+            .filter(|call| call.method == ScmMethod::RefreshPersonToken)
             .count()
     };
     assert_eq!(
@@ -2088,7 +2088,7 @@ async fn signed_in_on(pool: &PgPool, sim: &Sim, person: &ScmUser, now: OffsetDat
         code_verifier: SecretString::from("verifier"),
         redirect_url: request.redirect_url.clone(),
     };
-    let (signed_in, token) = Scm::sign_in(sim, &code, JobClass::Interactive)
+    let (signed_in, token) = PersonCalls::sign_in(sim, &code, JobClass::Interactive)
         .await
         .unwrap();
 
@@ -2276,7 +2276,7 @@ async fn a_refused_read_of_the_role_keeps_the_membership(pool: PgPool) {
     let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
     let membership = memberships_of(&pool, user_id).await.unwrap().remove(0);
     sim.fail(Fault {
-        call: Some("person_role"),
+        call: Some(ScmMethod::PersonRole),
         error: ScmError::Forbidden("single sign-on not authorized".into()),
         times: 1,
     });

@@ -14,6 +14,7 @@ const JWT_DRIFT: Duration = Duration::seconds(60);
 /// A JWT lives this long; GitHub accepts 10 minutes at most.
 const JWT_LIFETIME: Duration = Duration::minutes(9);
 
+/// Why the private key of the App cannot be read or used.
 #[derive(Debug, thiserror::Error)]
 pub enum KeyError {
     #[error("the private key is not a PEM block")]
@@ -26,6 +27,7 @@ pub enum KeyError {
     Rejected(String),
 }
 
+/// The private key of the App, which signs its JWT.
 #[derive(Debug)]
 pub struct AppKey(RsaKeyPair);
 
@@ -81,6 +83,8 @@ impl AppKey {
     }
 }
 
+/// The encoded header and claims of the JWT of the App `app_id`, which the key
+/// signs.
 fn signing_input(app_id: &str, now: OffsetDateTime) -> String {
     let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
     let claims = serde_json::json!({

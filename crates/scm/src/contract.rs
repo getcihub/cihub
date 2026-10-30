@@ -15,13 +15,14 @@ use cihub_domain::{
 };
 
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError,
-    ScmUser, SetupFinding, StatusUpdate,
+    BranchMove, CommitStatus, DraftPr, MergeIntoRef, PrMerge, PrSnapshot, RepoRef, RequiredChecks,
+    Scm, ScmError, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fixture {
+    /// The branch that the PRs of the fixture target.
     pub base_branch: String,
     /// What the rules of the base branch require.
     pub required: RequiredChecks,
@@ -172,10 +173,10 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert_eq!(mergeable.base_branch, fixture.base_branch);
     assert_eq!(mergeable.mergeability, Mergeability::Mergeable);
     assert_eq!(mergeable.review_decision, ReviewDecision::Approved);
-    assert!(!mergeable.draft);
+    assert!(!mergeable.is_draft);
     assert!(mergeable.changed_files > 0);
     assert_ne!(mergeable.head_branch, "");
-    assert!(!mergeable.from_fork);
+    assert!(!mergeable.is_from_fork);
     assert!(
         !mergeable.approved_by.is_empty(),
         "an approved PR names who approved it"
@@ -183,7 +184,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert!(mergeable.changes_requested_by.is_empty());
     page_and_check_times(scm, repo, mergeable, fixture);
     assert_eq!(conflicting.mergeability, Mergeability::Conflict);
-    assert!(draft.draft);
+    assert!(draft.is_draft);
     assert_eq!(draft.mergeability, Mergeability::Blocked);
 
     let one = scm
@@ -302,7 +303,7 @@ async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 
     assert_eq!(scm.branch_head(repo, work, CLASS).await.unwrap(), None);
     for _ in 0..2 {
-        scm.set_branch(repo, work, &base, false, CLASS)
+        scm.set_branch(repo, work, &base, BranchMove::FastForwardOnly, CLASS)
             .await
             .unwrap();
     }
@@ -336,14 +337,17 @@ async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 
     assert_eq!(conflict, MergeIntoRef::Conflict);
 
-    let behind = scm.set_branch(repo, work, &base, false, CLASS).await;
+    let behind = scm
+        .set_branch(repo, work, &base, BranchMove::FastForwardOnly, CLASS)
+        .await;
 
-    assert!(
-        matches!(behind, Err(ScmError::Validation(_))),
-        "a move back without force is refused: {behind:?}"
+    assert_eq!(
+        behind,
+        Err(ScmError::NotFastForward),
+        "a move back without force is refused"
     );
 
-    scm.set_branch(repo, work, &base, true, CLASS)
+    scm.set_branch(repo, work, &base, BranchMove::Force, CLASS)
         .await
         .unwrap();
 
@@ -414,26 +418,26 @@ async fn statuses_comments_and_labels(scm: &dyn Scm, repo: &RepoRef, fixture: &F
 async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let work = fixture.work_branch.as_str();
     let head = pr_head(scm, repo, fixture.mergeable_pr).await;
-    scm.set_branch(repo, work, &head, true, CLASS)
+    scm.set_branch(repo, work, &head, BranchMove::Force, CLASS)
         .await
         .unwrap();
 
-    let base = fixture.base_branch.as_str();
-    let number = scm
-        .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
-        .await
-        .unwrap();
-    let again = scm
-        .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
-        .await
-        .unwrap();
+    let draft = DraftPr {
+        head: work.to_owned(),
+        base: fixture.base_branch.clone(),
+        title: "contract draft".into(),
+        body: "contract".into(),
+    };
+    let number = scm.open_draft_pr(repo, &draft, CLASS).await.unwrap();
+    let again = scm.open_draft_pr(repo, &draft, CLASS).await.unwrap();
 
     assert_eq!(again, number, "an open draft PR is not opened twice");
-    let draft = scm.pull_request(repo, number, CLASS).await.unwrap();
 
-    assert!(draft.draft);
+    let opened = scm.pull_request(repo, number, CLASS).await.unwrap();
+
+    assert!(opened.is_draft);
     assert_eq!(
-        (draft.title.as_str(), draft.body.as_str()),
+        (opened.title.as_str(), opened.body.as_str()),
         ("contract draft", "contract")
     );
 

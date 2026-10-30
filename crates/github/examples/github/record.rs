@@ -15,7 +15,7 @@ use base64::engine::general_purpose::STANDARD;
 use cihub_domain::{CheckKind, JobClass, Mergeability, ReviewDecision};
 use cihub_github::{AppKey, GithubApp, GithubConfig};
 use cihub_scm::contract;
-use cihub_scm::{CommitStatus, RepoRef, Scm, StatusUpdate};
+use cihub_scm::{BranchMove, CommitStatus, DraftPr, RepoCalls, RepoRef, StatusUpdate};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -104,8 +104,14 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         .branch_head(repo, BASE, CLASS)
         .await?
         .ok_or("no branch main")?;
-    app.set_branch(repo, CONFLICTING_BRANCH, &head, false, CLASS)
-        .await?;
+    app.set_branch(
+        repo,
+        CONFLICTING_BRANCH,
+        &head,
+        BranchMove::FastForwardOnly,
+        CLASS,
+    )
+    .await?;
 
     let conflict = "cihub-contract/conflict.txt";
     rest.put_file(CONFLICTING_BRANCH, conflict, "conflicting\n")
@@ -120,15 +126,25 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         .branch_head(repo, BASE, CLASS)
         .await?
         .ok_or("no branch main")?;
-    app.set_branch(repo, DRAFT_BRANCH, &head, false, CLASS)
-        .await?;
+    app.set_branch(
+        repo,
+        DRAFT_BRANCH,
+        &head,
+        BranchMove::FastForwardOnly,
+        CLASS,
+    )
+    .await?;
 
     rest.put_file(DRAFT_BRANCH, "cihub-contract/draft.txt", "draft\n")
         .await?;
 
-    let draft = app
-        .open_draft_pr(repo, DRAFT_BRANCH, BASE, "cihub contract: draft", "", CLASS)
-        .await?;
+    let draft = DraftPr {
+        head: DRAFT_BRANCH.into(),
+        base: BASE.into(),
+        title: "cihub contract: draft".into(),
+        body: String::new(),
+    };
+    let draft = app.open_draft_pr(repo, &draft, CLASS).await?;
     println!("conflicting PR: {conflicting}\ndraft PR: {draft}");
     println!(
         "now add a ruleset on `main`: require the status `{REQUIRED}` (branches up to date \
@@ -146,7 +162,8 @@ pub async fn prepare_pr(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) 
         .branch_head(repo, BASE, CLASS)
         .await?
         .ok_or("no branch main")?;
-    app.set_branch(repo, &branch, &head, false, CLASS).await?;
+    app.set_branch(repo, &branch, &head, BranchMove::FastForwardOnly, CLASS)
+        .await?;
     rest.put_file(&branch, &format!("cihub-contract/pr-{stamp}.txt"), "pr\n")
         .await?;
 
@@ -278,7 +295,7 @@ async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Re
         .map(|pr| {
             format!(
                 "#{}: {:?}, draft {}, {:?}, {:?}",
-                pr.number, pr.state, pr.draft, pr.mergeability, pr.review_decision
+                pr.number, pr.state, pr.is_draft, pr.mergeability, pr.review_decision
             )
         })
         .collect();

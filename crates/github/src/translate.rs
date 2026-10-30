@@ -7,6 +7,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+/// Why a delivery cannot be translated.
 #[derive(Debug, thiserror::Error)]
 pub enum TranslateError {
     #[error("the delivery `{event}` has no field {pointer}")]
@@ -155,11 +156,13 @@ pub(crate) fn check_run_status(status: &str) -> CheckStatus {
     }
 }
 
+/// The time at `pointer` in `payload`, if it is a valid one.
 fn time_at(payload: &Value, pointer: &str) -> Option<OffsetDateTime> {
     let text = payload.pointer(pointer)?.as_str()?;
     OffsetDateTime::parse(text, &Rfc3339).ok()
 }
 
+/// A change of a PR or of one of its reviews.
 fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateError> {
     let on_pr = read.event == "pull_request";
     Ok(ScmEvent::PrChanged {
@@ -198,6 +201,7 @@ fn job_started(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
     })
 }
 
+/// The submission box of a comment of CIHub, checked by the sender.
 fn submit_box(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
     Ok(ScmEvent::SubmitBoxChecked {
         repo_external_id: read.id("/repository/id")?,
@@ -207,6 +211,7 @@ fn submit_box(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
     })
 }
 
+/// Whether a person, not a bot, checked the submission box of the comment.
 fn submit_box_checked(payload: &Value) -> bool {
     let has = |pointer: &str, check: &str| {
         payload
@@ -218,6 +223,7 @@ fn submit_box_checked(payload: &Value) -> bool {
     !by_bot && has("/comment/body", "x") && has("/changes/body/from", " ")
 }
 
+/// An id that GitHub gives as a number or as a text.
 fn id(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::Number(n) => Some(n.to_string()),
@@ -226,12 +232,14 @@ fn id(value: Option<&Value>) -> Option<String> {
     }
 }
 
+/// Reads the fields of a delivery; an error names the missing field.
 struct Reader<'a> {
     event: &'a str,
     payload: &'a Value,
 }
 
 impl Reader<'_> {
+    /// The error of the missing field `pointer`.
     fn missing(&self, pointer: &'static str) -> TranslateError {
         TranslateError::Missing {
             event: self.event.to_owned(),
@@ -239,10 +247,12 @@ impl Reader<'_> {
         }
     }
 
+    /// The id at `pointer`.
     fn id(&self, pointer: &'static str) -> Result<String, TranslateError> {
         id(self.payload.pointer(pointer)).ok_or_else(|| self.missing(pointer))
     }
 
+    /// The text at `pointer`.
     fn text(&self, pointer: &'static str) -> Result<String, TranslateError> {
         self.payload
             .pointer(pointer)
@@ -251,6 +261,7 @@ impl Reader<'_> {
             .ok_or_else(|| self.missing(pointer))
     }
 
+    /// The number at `pointer`.
     fn number(&self, pointer: &'static str) -> Result<u64, TranslateError> {
         self.payload
             .pointer(pointer)
@@ -258,6 +269,7 @@ impl Reader<'_> {
             .ok_or_else(|| self.missing(pointer))
     }
 
+    /// The boolean at `pointer`; `false` when it is missing.
     fn flag(&self, pointer: &'static str) -> bool {
         self.payload
             .pointer(pointer)
@@ -265,6 +277,7 @@ impl Reader<'_> {
             .unwrap_or(false)
     }
 
+    /// The user at `pointer`.
     fn user(&self, pointer: &'static str) -> Result<ScmUser, TranslateError> {
         let user = self
             .payload
@@ -279,6 +292,8 @@ impl Reader<'_> {
         })
     }
 
+    /// The ids of the items of the list at `pointer`; none when the list is
+    /// missing.
     fn ids(&self, pointer: &'static str) -> Result<Vec<String>, TranslateError> {
         let Some(list) = self.payload.pointer(pointer) else {
             return Ok(Vec::new());

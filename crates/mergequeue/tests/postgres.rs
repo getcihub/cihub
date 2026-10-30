@@ -28,10 +28,10 @@ use cihub_platform::{
     run_maintenance, run_router, run_worker, store_delivery, sync_installation_executor,
     sync_installations_executor, sync_repos_executor, sync_repos_job,
 };
-use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
+use cihub_scm::sim::{Fault, PrChange, Reviews, ScmMethod, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent,
-    ScmUser,
+    ConnectionRef, PersonCalls, RepoCalls, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery,
+    ScmError, ScmEvent, ScmUser,
 };
 use cihub_store::{begin_org, begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
@@ -1087,7 +1087,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     let own = queue_status_context("main");
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned(), own]),
-        up_to_date: false,
+        requires_up_to_date: false,
     };
 
     sim.set_rules(&repo(), "main", rules).unwrap();
@@ -1702,7 +1702,7 @@ fn target_repo(sim: &Sim, files: &[(&str, &str)]) -> String {
 
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned()]),
-        up_to_date: false,
+        requires_up_to_date: false,
     };
 
     sim.set_rules(&repo(), "main", rules).unwrap();
@@ -2034,7 +2034,7 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     submit(1);
 
     sim.fail(Fault {
-        call: Some("set_branch"),
+        call: Some(ScmMethod::SetBranch),
         error: ScmError::Forbidden("Protected branch update failed".into()),
         times: 1,
     });
@@ -2188,14 +2188,14 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     let reads = sim
         .calls()
         .iter()
-        .filter(|call| call.name == "pr_files")
+        .filter(|call| call.method == ScmMethod::PrFiles)
         .count();
 
     assert!(reads >= 2, "{reads}");
     assert!(
         !sim.calls()
             .iter()
-            .any(|call| call.name == "unresolved_threads")
+            .any(|call| call.method == ScmMethod::UnresolvedThreads)
     );
 
     q.stop().await;
@@ -3107,7 +3107,7 @@ async fn a_branch_without_a_required_check_merges_nothing(pool: PgPool) {
     let main = target_repo(&sim, &[("a.txt", "a")]);
     let no_rules = RequiredChecks {
         names: BTreeSet::new(),
-        up_to_date: false,
+        requires_up_to_date: false,
     };
 
     sim.set_rules(&repo(), "main", no_rules).unwrap();
@@ -4144,7 +4144,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert!(
         calls[before_sync..]
             .iter()
-            .any(|call| call.name == "check_setup"),
+            .any(|call| call.method == ScmMethod::CheckSetup),
         "the sync reads the setup"
     );
     assert_eq!(read_again["setup"], checked["setup"]);
@@ -5967,7 +5967,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     };
 
     sim.fail(Fault {
-        call: Some("merge_pr"),
+        call: Some(ScmMethod::MergePr),
         error: ScmError::Unavailable("502".into()),
         times: 2,
     });
@@ -5982,7 +5982,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     assert_eq!(current_items(&pool).await[0].1, "merged");
 
     sim.fail(Fault {
-        call: Some("merge_pr"),
+        call: Some(ScmMethod::MergePr),
         error: ScmError::HeadChanged,
         times: 1,
     });
@@ -6001,12 +6001,16 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
         ]
     );
 
-    let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
+    let merges = sim
+        .calls()
+        .iter()
+        .filter(|c| c.method == ScmMethod::MergePr)
+        .count();
     assert_eq!(merges, 4, "two errors and a merge, then a changed head");
     assert!(
         sim.calls()
             .iter()
-            .filter(|c| c.name == "merge_pr")
+            .filter(|c| c.method == ScmMethod::MergePr)
             .all(|c| c.class == JobClass::Merge)
     );
 
@@ -6095,7 +6099,11 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     assert_eq!(restarted, 1);
     drop(tx);
 
-    let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
+    let merges = sim
+        .calls()
+        .iter()
+        .filter(|c| c.method == ScmMethod::MergePr)
+        .count();
     assert_eq!(merges, 2, "the merge by hand and the merge of PR 2");
     q.stop().await;
 }
@@ -6562,7 +6570,7 @@ impl Chaos {
         );
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
 
         sim.set_rules(&repo, "main", rules).unwrap();
@@ -6984,7 +6992,12 @@ async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPo
     let person_calls = || {
         sim.calls()
             .iter()
-            .filter(|call| call.name.starts_with("person_"))
+            .filter(|call| {
+                matches!(
+                    call.method,
+                    ScmMethod::PersonReach | ScmMethod::PersonPermission | ScmMethod::PersonRole
+                )
+            })
             .count()
     };
     let age = |table: &'static str, column: &'static str| {
@@ -7045,7 +7058,7 @@ async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPo
 
     age("memberships", "refreshed_at").await;
     sim.fail(Fault {
-        call: Some("person_role"),
+        call: Some(ScmMethod::PersonRole),
         error: ScmError::Unavailable("down".into()),
         times: 1,
     });
@@ -7575,7 +7588,7 @@ async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: P
 
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned(), conditions_status_context("main")]),
-        up_to_date: false,
+        requires_up_to_date: false,
     };
     sim.set_rules(&repo(), "main", rules).unwrap();
     cihub_mergequeue::sync_queue(&pool, queue(), q.clock.now())

@@ -2,14 +2,16 @@
 //! each connection, and the errors of GitHub in the terms of CIHub.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use cihub_domain::{ConnectionId, JobClass, Permission};
-use cihub_scm::{ConnectionRef, ScmError, ScmPersonToken, SignInCode};
+use cihub_scm::{ConnectionRef, RepoRef, ScmError};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
@@ -21,12 +23,22 @@ use crate::budget::{Budget, Observation, Rate, SECONDARY_WAIT};
 /// The REST API version of every call: GitHub Enterprise Server accepts it
 /// too.
 const API_VERSION: &str = "2022-11-28";
+/// A token of an installation is renewed this long before it expires.
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
+/// How long a permission that GitHub gave is kept.
 const PERMISSION_TTL: Duration = Duration::minutes(5);
+/// Above this number of kept permissions, the expired ones are removed.
 const PERMISSIONS_KEPT: usize = 10_000;
+/// The longest wait for an answer of GitHub.
 pub(crate) const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// The media type of the REST API of GitHub.
 pub(crate) const JSON: &str = "application/vnd.github+json";
+/// The media type that gives the content of a file as it is.
+pub(crate) const RAW: &str = "application/vnd.github.raw+json";
+/// The largest page that GitHub gives.
+pub(crate) const PER_PAGE: usize = 100;
 
+/// The address of github.com, whose API has its own host.
 const GITHUB_COM: &str = "https://github.com";
 
 /// The address of the REST API of `url`, github.com or a GitHub Enterprise
@@ -37,6 +49,32 @@ pub(crate) fn api_url(url: &str) -> String {
     } else {
         format!("{url}/api/v3")
     }
+}
+
+/// Encodes a part of a path or of a query, keeping `/`, which the branch
+/// names of GitHub contain.
+pub(crate) fn encode(text: &str) -> String {
+    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                encoded.push(char::from(byte));
+            }
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
+        }
+    }
+    encoded
+}
+
+/// The path of `rest` in `repo`, such as `/repos/o/r/pulls/1`.
+pub(crate) fn repo_path(repo: &RepoRef, rest: &str) -> String {
+    format!(
+        "/repos/{}/{}{rest}",
+        encode(&repo.owner),
+        encode(&repo.name)
+    )
 }
 
 /// The time, read by the caller.
@@ -61,6 +99,7 @@ pub struct SignInClient {
     pub client_secret: SecretString,
 }
 
+/// Why the client of the App cannot start.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
     #[error("the private key of the GitHub App is not valid")]
@@ -69,17 +108,35 @@ pub enum ClientError {
     Http(#[source] reqwest::Error),
 }
 
+/// Who makes a call, which decides its token and whether a budget counts it.
+#[derive(Clone, Copy)]
+pub(crate) enum Auth<'a> {
+    /// The token of the installation of a connection: the budget of the
+    /// connection admits and counts the call.
+    Installation(&'a ConnectionRef, JobClass),
+    /// The JWT of the App, outside the budget of any connection.
+    App,
+    /// The token of a person, outside the budget of any connection.
+    Person(&'a SecretString),
+}
+
+/// An answer of GitHub, read in full.
 #[derive(Debug)]
 pub(crate) struct Answer {
     pub status: StatusCode,
+    pub headers: HeaderMap,
     pub body: Vec<u8>,
+    /// The path of the next page, from the `Link` header.
+    pub next: Option<String>,
 }
 
 impl Answer {
-    pub(crate) fn json<T: serde::de::DeserializeOwned>(&self) -> Result<T, ScmError> {
+    /// The body, read as JSON.
+    pub(crate) fn json<T: DeserializeOwned>(&self) -> Result<T, ScmError> {
         serde_json::from_slice(&self.body).map_err(|err| ScmError::Protocol(err.to_string()))
     }
 
+    /// The status and the `message` of the body, to describe an error.
     pub(crate) fn message(&self) -> String {
         #[derive(Deserialize)]
         struct Message {
@@ -90,16 +147,36 @@ impl Answer {
             |m| format!("HTTP {}: {}", self.status, m.message),
         )
     }
-}
 
-pub(crate) struct Request<'a> {
-    pub connection: &'a ConnectionRef,
-    pub class: JobClass,
-    pub method: Method,
-    /// After the address of the API, such as `/repos/o/r/pulls/1`.
-    pub path: String,
-    pub body: Option<Value>,
-    pub accept: &'static str,
+    /// The answer when its status is one of `statuses`, its error otherwise.
+    pub(crate) fn expect_status(self, statuses: &[StatusCode]) -> Result<Self, ScmError> {
+        if statuses.contains(&self.status) {
+            Ok(self)
+        } else {
+            Err(self.error())
+        }
+    }
+
+    /// The error of an answer that the caller does not expect.
+    pub(crate) fn error(&self) -> ScmError {
+        let message = self.message();
+        match self.status {
+            StatusCode::NOT_FOUND => ScmError::NotFound(message),
+            // GitHub says this when the App lacks the permission of the call,
+            // or when the installation does not cover the repository.
+            StatusCode::FORBIDDEN if message.contains("not accessible by integration") => {
+                ScmError::Forbidden(format!(
+                    "the GitHub App lacks a permission for this call, or its installation does \
+                     not cover the repository: {message}"
+                ))
+            }
+            StatusCode::FORBIDDEN => ScmError::Forbidden(message),
+            StatusCode::UNPROCESSABLE_ENTITY | StatusCode::CONFLICT => {
+                ScmError::Validation(message)
+            }
+            _ => ScmError::Protocol(message),
+        }
+    }
 }
 
 /// The GitHub App, shared by every executor of a process.
@@ -114,7 +191,7 @@ pub struct GithubApp {
     pub(crate) install_url: OnceLock<String>,
     app_id: String,
     key: AppKey,
-    http: Client,
+    pub(crate) http: Client,
     clock: Clock,
     tokens: Mutex<HashMap<String, (SecretString, OffsetDateTime)>>,
     permissions: Mutex<HashMap<PermissionKey, (Permission, OffsetDateTime)>>,
@@ -122,6 +199,8 @@ pub struct GithubApp {
     urgent: Arc<Notify>,
 }
 
+/// The budgets of the connections, and those that changed since their last
+/// write.
 #[derive(Default)]
 struct Budgets {
     all: HashMap<ConnectionId, Budget>,
@@ -129,6 +208,8 @@ struct Budgets {
 }
 
 impl Budgets {
+    /// Updates the budget of `connection`; `true` when its pause or its mode
+    /// changes.
     fn observe(
         &mut self,
         connection: ConnectionId,
@@ -144,6 +225,7 @@ impl Budgets {
         before != (budget.mode, budget.paused_until)
     }
 
+    /// The budgets that changed since the last call.
     fn take_changed(&mut self) -> Vec<(ConnectionId, Budget)> {
         let Self { all, changed } = self;
         changed
@@ -153,13 +235,16 @@ impl Budgets {
     }
 }
 
+/// A connection, a repository `<owner>/<name>` and a login.
 pub(crate) type PermissionKey = (ConnectionId, String, String);
 
 impl GithubApp {
+    /// The id of the App.
     pub(crate) fn app_id(&self) -> &str {
         &self.app_id
     }
 
+    /// The permission kept for `key`, if it has not expired.
     pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
         let now = (self.clock)();
         let kept = self
@@ -171,6 +256,7 @@ impl GithubApp {
             .map(|(permission, _)| *permission)
     }
 
+    /// Keeps `permission` for `key` during [`PERMISSION_TTL`].
     pub(crate) fn keep_permission(&self, key: PermissionKey, permission: Permission) {
         let now = (self.clock)();
         let mut kept = self
@@ -184,6 +270,8 @@ impl GithubApp {
         kept.insert(key, (permission, now + PERMISSION_TTL));
     }
 
+    /// The App that `config` describes, which reads the time with `clock`.
+    ///
     /// # Errors
     ///
     /// The key is not valid, or the HTTP client cannot start.
@@ -233,12 +321,15 @@ impl GithubApp {
         Arc::clone(&self.urgent)
     }
 
+    /// Whether the budget of `connection` lets a call of `class` go now.
     fn admit(&self, connection: ConnectionId, class: JobClass) -> Result<(), ScmError> {
         let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
         let budget = budgets.all.entry(connection).or_default();
         budget.admit(class, (self.clock)())
     }
 
+    /// Updates the budget of `connection`, and wakes the loop that writes the
+    /// budgets when the change is urgent.
     fn observe(&self, connection: ConnectionId, observation: Observation, now: OffsetDateTime) {
         let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
         if budgets.observe(connection, observation, now) {
@@ -246,11 +337,38 @@ impl GithubApp {
         }
     }
 
-    pub(crate) async fn send(&self, request: Request<'_>) -> Result<Answer, ScmError> {
-        let url = format!("{}{}", self.api_url, request.path);
-        self.send_to(request, url).await
+    /// A call to the REST API at `path`, such as `/repos/o/r/pulls/1`.
+    pub(crate) async fn send(
+        &self,
+        auth: Auth<'_>,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Answer, ScmError> {
+        self.send_accepting(auth, method, path, body, JSON).await
     }
 
+    /// [`Self::send`], with the media type `accept` in place of JSON.
+    pub(crate) async fn send_accepting(
+        &self,
+        auth: Auth<'_>,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        accept: &str,
+    ) -> Result<Answer, ScmError> {
+        let url = format!("{}{path}", self.api_url);
+        let mut answer = self.call(auth, method, url, body, accept).await?;
+        answer.next = answer
+            .headers
+            .get("link")
+            .and_then(|link| link.to_str().ok())
+            .and_then(|link| next_page(link, path));
+
+        Ok(answer)
+    }
+
+    /// A GraphQL query with its variables, with the token of `connection`.
     pub(crate) async fn graphql(
         &self,
         connection: &ConnectionRef,
@@ -258,144 +376,92 @@ impl GithubApp {
         query: &str,
         variables: Value,
     ) -> Result<Answer, ScmError> {
-        let request = Request {
-            connection,
-            class,
-            method: Method::POST,
-            path: String::new(),
-            body: Some(serde_json::json!({ "query": query, "variables": variables })),
-            accept: JSON,
-        };
-        self.send_to(request, self.graphql_url.clone()).await
+        let auth = Auth::Installation(connection, class);
+        let body = serde_json::json!({ "query": query, "variables": variables });
+        self.call(
+            auth,
+            Method::POST,
+            self.graphql_url.clone(),
+            Some(body),
+            JSON,
+        )
+        .await
     }
 
-    pub(crate) async fn send_as_app(
+    /// A call to the REST API at `rest` in `repo`, such as `/pulls/1`.
+    pub(crate) async fn rest(
         &self,
+        repo: &RepoRef,
+        class: JobClass,
         method: Method,
-        path: &str,
-    ) -> Result<(Answer, Option<String>), ScmError> {
-        let now = (self.clock)();
-        page_outside_budgets(self.as_app(method, path, now)?, path, now).await
+        rest: &str,
+        body: Option<Value>,
+    ) -> Result<Answer, ScmError> {
+        let auth = Auth::Installation(&repo.connection, class);
+        self.send(auth, method, &repo_path(repo, rest), body).await
     }
 
-    /// A `GET` of `path` with the token of a person, outside the budget of
-    /// any connection, and the path of its next page.
-    pub(crate) async fn get_as_person(
+    /// A `GET` of `rest` in `repo` that GitHub answers with `200`.
+    pub(crate) async fn get_json<T: DeserializeOwned>(
         &self,
-        token: &SecretString,
-        path: &str,
-    ) -> Result<(Answer, Option<String>), ScmError> {
-        let now = (self.clock)();
-        let url = format!("{}{path}", self.api_url);
-        let request = self.api_request(Method::GET, url, token.expose_secret(), JSON);
-        let (answer, next) = page_outside_budgets(request, path, now).await?;
-        if answer.status == StatusCode::UNAUTHORIZED {
-            return Err(ScmError::AccessLost(format!(
-                "the token of the person is refused: {}",
-                answer.message()
-            )));
+        repo: &RepoRef,
+        class: JobClass,
+        rest: &str,
+    ) -> Result<T, ScmError> {
+        let answer = self.rest(repo, class, Method::GET, rest, None).await?;
+        answer.expect_status(&[StatusCode::OK])?.json()
+    }
+
+    /// Every page of `path` that the `Link` header names, for a route that
+    /// gives its pages by a cursor.
+    pub(crate) async fn linked_pages<P: DeserializeOwned>(
+        &self,
+        auth: Auth<'_>,
+        path: String,
+    ) -> Result<Vec<P>, ScmError> {
+        let mut path = Some(path);
+        let mut pages = Vec::new();
+        while let Some(page) = path.take() {
+            let answer = self.send(auth, Method::GET, &page, None).await?;
+            let answer = answer.expect_status(&[StatusCode::OK])?;
+            pages.push(answer.json()?);
+            path = answer.next;
         }
 
-        Ok((answer, next))
+        Ok(pages)
     }
 
-    /// Exchanges the code of a sign-in for the token of the person. GitHub
-    /// answers a refused code with `200` and an `error` field.
-    pub(crate) async fn exchange_sign_in_code(
+    /// The items of the pages of `path` numbered from 1, up to the first page
+    /// that is not full or to `max_pages` pages.
+    pub(crate) async fn numbered_pages<T: DeserializeOwned>(
         &self,
-        code: &SignInCode,
-    ) -> Result<ScmPersonToken, ScmError> {
-        let token = self
-            .ask_person_token(serde_json::json!({
-                "code": code.code.expose_secret(),
-                "code_verifier": code.code_verifier.expose_secret(),
-                "redirect_uri": code.redirect_url,
-            }))
-            .await?;
-
-        token.map_err(|error| {
-            ScmError::Validation(format!("the code of the sign-in is refused: {error}"))
-        })
-    }
-
-    /// Trades `refresh` for a new token of its person. GitHub answers a
-    /// refused refresh token with `200` and an `error` field.
-    pub(crate) async fn refresh_person(
-        &self,
-        refresh: &SecretString,
-    ) -> Result<ScmPersonToken, ScmError> {
-        let token = self
-            .ask_person_token(serde_json::json!({
-                "grant_type": "refresh_token",
-                "refresh_token": refresh.expose_secret(),
-            }))
-            .await?;
-
-        token.map_err(|error| {
-            ScmError::AccessLost(format!(
-                "the refresh token of the person is refused: {error}"
-            ))
-        })
-    }
-
-    /// Asks `/login/oauth/access_token` for a token of a person, with the
-    /// client of the App and `grant`; the inner error is the refusal of
-    /// GitHub.
-    async fn ask_person_token(
-        &self,
-        grant: serde_json::Value,
-    ) -> Result<Result<ScmPersonToken, String>, ScmError> {
-        #[derive(Deserialize)]
-        struct Exchanged {
-            access_token: Option<String>,
-            expires_in: Option<i64>,
-            refresh_token: Option<String>,
-            refresh_token_expires_in: Option<i64>,
-            error: Option<String>,
-        }
-
-        let client = self.sign_in.as_ref().ok_or_else(|| {
-            ScmError::Forbidden("the GitHub App has no client for the sign-in".into())
-        })?;
-        let mut body = grant;
-        body["client_id"] = client.client_id.clone().into();
-        body["client_secret"] = client.client_secret.expose_secret().into();
-        let request = self
-            .http
-            .post(format!("{}/login/oauth/access_token", self.web_url))
-            .header(ACCEPT, "application/json")
-            .header(CONTENT_TYPE, "application/json")
-            .body(body.to_string());
-        let (status, _, body) = fetch(request).await?;
-        let answer = Answer { status, body };
-        if status.is_server_error() {
-            return Err(ScmError::Unavailable(answer.message()));
-        }
-
-        let exchanged: Exchanged = answer.json()?;
-        Ok(match (exchanged.access_token, exchanged.error) {
-            (Some(token), None) => Ok(ScmPersonToken {
-                access: SecretString::from(token),
-                access_lifetime: exchanged.expires_in.map(Duration::seconds),
-                refresh: exchanged.refresh_token.map(SecretString::from),
-                refresh_lifetime: exchanged.refresh_token_expires_in.map(Duration::seconds),
-            }),
-            (_, error) => Err(error.unwrap_or_else(|| "no token".to_owned())),
-        })
-    }
-
-    fn as_app(
-        &self,
-        method: Method,
+        auth: Auth<'_>,
         path: &str,
-        now: OffsetDateTime,
-    ) -> Result<RequestBuilder, ScmError> {
-        let jwt = self
-            .key
+        max_pages: usize,
+    ) -> Result<Vec<T>, ScmError> {
+        let separator = if path.contains('?') { '&' } else { '?' };
+        let mut items = Vec::new();
+        for page in 1..=max_pages {
+            let page = format!("{path}{separator}per_page={PER_PAGE}&page={page}");
+            let answer = self.send(auth, Method::GET, &page, None).await?;
+            let listed: Vec<T> = answer.expect_status(&[StatusCode::OK])?.json()?;
+            let is_last = listed.len() < PER_PAGE;
+
+            items.extend(listed);
+            if is_last {
+                break;
+            }
+        }
+
+        Ok(items)
+    }
+
+    /// A JWT of the App at `now`.
+    fn jwt(&self, now: OffsetDateTime) -> Result<SecretString, ScmError> {
+        self.key
             .jwt(&self.app_id, now)
-            .map_err(|err| ScmError::Protocol(err.to_string()))?;
-        let url = format!("{}{path}", self.api_url);
-        Ok(self.api_request(method, url, &jwt, JSON))
+            .map(SecretString::from)
+            .map_err(|err| ScmError::Protocol(err.to_string()))
     }
 
     /// A call to the API of GitHub at `url`, authenticated by `bearer`.
@@ -403,42 +469,66 @@ impl GithubApp {
         &self,
         method: Method,
         url: String,
-        bearer: &str,
+        bearer: &SecretString,
         accept: &str,
     ) -> RequestBuilder {
         self.http
             .request(method, url)
-            .header(AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(AUTHORIZATION, format!("Bearer {}", bearer.expose_secret()))
             .header(ACCEPT, accept)
             .header("X-GitHub-Api-Version", API_VERSION)
     }
 
-    async fn send_to(&self, request: Request<'_>, url: String) -> Result<Answer, ScmError> {
-        let connection = request.connection.id;
-        self.admit(connection, request.class)?;
-        let token = self.token(request.connection).await?;
-        let mut builder =
-            self.api_request(request.method, url, token.expose_secret(), request.accept);
-        if let Some(body) = &request.body {
-            builder = builder
+    /// Sends a call with the token of `auth`, and reads its answer.
+    async fn call(
+        &self,
+        auth: Auth<'_>,
+        method: Method,
+        url: String,
+        body: Option<Value>,
+        accept: &str,
+    ) -> Result<Answer, ScmError> {
+        let bearer = match auth {
+            Auth::Installation(connection, class) => {
+                self.admit(connection.id, class)?;
+                self.token(connection).await?
+            }
+            Auth::App => self.jwt((self.clock)())?,
+            Auth::Person(token) => token.clone(),
+        };
+        let mut request = self.api_request(method, url, &bearer, accept);
+        if let Some(body) = &body {
+            request = request
                 .header(CONTENT_TYPE, "application/json")
                 .body(body.to_string());
         }
 
-        let answer = fetch(builder).await;
+        let fetched = fetch(request).await;
         let now = (self.clock)();
-        let (status, headers, body) = match answer {
+        match auth {
+            Auth::Installation(connection, _) => self.counted(connection, fetched, now),
+            Auth::App | Auth::Person(_) => outside_budgets(auth, fetched?, now),
+        }
+    }
+
+    /// The answer of a call of `connection`, which its budget observes.
+    fn counted(
+        &self,
+        connection: &ConnectionRef,
+        fetched: Result<Answer, ScmError>,
+        now: OffsetDateTime,
+    ) -> Result<Answer, ScmError> {
+        let answer = match fetched {
             Ok(answer) => answer,
             Err(err) => {
-                self.observe(connection, Observation::Failed, now);
+                self.observe(connection.id, Observation::Failed, now);
                 return Err(err);
             }
         };
-        let answer = Answer { status, body };
-        let (observation, error) = classify(&answer, &headers, now);
-        self.observe(connection, observation, now);
-        if status == StatusCode::UNAUTHORIZED {
-            self.forget_token(&request.connection.external_id);
+        let (observation, error) = classify(&answer, now);
+        self.observe(connection.id, observation, now);
+        if answer.status == StatusCode::UNAUTHORIZED {
+            self.forget_token(&connection.external_id);
         }
 
         match error {
@@ -447,6 +537,8 @@ impl GithubApp {
         }
     }
 
+    /// Pauses `connection` until the reset of its GraphQL limit, and gives the
+    /// error.
     pub(crate) fn graphql_limit_reached(&self, connection: ConnectionId) -> ScmError {
         let now = (self.clock)();
         let reset_at = {
@@ -470,11 +562,14 @@ impl GithubApp {
         ScmError::RateLimited { until }
     }
 
+    /// Forgets the token of `installation`, which GitHub refused.
     fn forget_token(&self, installation: &str) {
         let mut tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
         tokens.remove(installation);
     }
 
+    /// The token of the installation of `connection`, from the cache or from
+    /// GitHub.
     async fn token(&self, connection: &ConnectionRef) -> Result<SecretString, ScmError> {
         #[derive(Deserialize)]
         struct Token {
@@ -493,24 +588,37 @@ impl GithubApp {
             }
         }
 
-        let path = format!("/app/installations/{installation}/access_tokens");
-        let fetched = fetch(self.as_app(Method::POST, &path, now)?).await;
-        let (status, _, body) = match fetched {
-            Ok(fetched) => fetched,
+        let url = format!(
+            "{}/app/installations/{installation}/access_tokens",
+            self.api_url
+        );
+        let request = self.api_request(Method::POST, url, &self.jwt(now)?, JSON);
+        let answer = match fetch(request).await {
+            Ok(answer) => answer,
             Err(err) => {
                 self.observe(connection.id, Observation::Failed, now);
                 return Err(err);
             }
         };
-        let answer = Answer { status, body };
-        match status {
+        let (observation, error) = classify(&answer, now);
+        // The rate limit headers of this call count the requests of the App,
+        // not those of the installation: only the answer itself is kept.
+        let observation = match observation {
+            Observation::Answered { resource, .. } => Observation::Answered {
+                resource,
+                rate: None,
+            },
+            other => other,
+        };
+        self.observe(connection.id, observation, now);
+        if let Some(error) = error {
+            return Err(error);
+        }
+
+        match answer.status {
             StatusCode::CREATED => {}
             StatusCode::NOT_FOUND | StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED => {
                 return Err(ScmError::AccessLost(answer.message()));
-            }
-            status if status.is_server_error() => {
-                self.observe(connection.id, Observation::Failed, now);
-                return Err(ScmError::Unavailable(answer.message()));
             }
             _ => return Err(ScmError::Protocol(answer.message())),
         }
@@ -535,33 +643,40 @@ impl std::fmt::Debug for GithubApp {
     }
 }
 
-/// The answer of a call that no budget of a connection counts, and the path
-/// of its next page.
-async fn page_outside_budgets(
-    request: RequestBuilder,
-    path: &str,
+/// The answer of a call that no budget of a connection counts. GitHub refuses
+/// the token of a person with `401`.
+fn outside_budgets(
+    auth: Auth<'_>,
+    answer: Answer,
     now: OffsetDateTime,
-) -> Result<(Answer, Option<String>), ScmError> {
-    let (status, headers, body) = fetch(request).await?;
-    let answer = Answer { status, body };
-    if let (_, Some(error)) = classify(&answer, &headers, now) {
+) -> Result<Answer, ScmError> {
+    if let (_, Some(error)) = classify(&answer, now) {
         return Err(error);
     }
 
-    let next = headers
-        .get("link")
-        .and_then(|link| link.to_str().ok())
-        .and_then(|link| next_page(link, path));
-    Ok((answer, next))
+    if matches!(auth, Auth::Person(_)) && answer.status == StatusCode::UNAUTHORIZED {
+        return Err(ScmError::AccessLost(format!(
+            "the token of the person is refused: {}",
+            answer.message()
+        )));
+    }
+
+    Ok(answer)
 }
 
-async fn fetch(request: RequestBuilder) -> Result<(StatusCode, HeaderMap, Vec<u8>), ScmError> {
+/// Sends `request` and reads its whole answer.
+pub(crate) async fn fetch(request: RequestBuilder) -> Result<Answer, ScmError> {
     let unavailable = |err: reqwest::Error| ScmError::Unavailable(err.to_string());
     let response = request.send().await.map_err(unavailable)?;
     let status = response.status();
     let headers = response.headers().clone();
     let body = response.bytes().await.map_err(unavailable)?;
-    Ok((status, headers, body.to_vec()))
+    Ok(Answer {
+        status,
+        headers,
+        body: body.to_vec(),
+        next: None,
+    })
 }
 
 /// The path of the `next` page in a `Link` header, from the path of the call
@@ -574,13 +689,11 @@ fn next_page(link: &str, path: &str) -> Option<String> {
         .and_then(|(url, _)| url.find(base).map(|start| url[start..].to_owned()))
 }
 
-fn classify(
-    answer: &Answer,
-    headers: &HeaderMap,
-    now: OffsetDateTime,
-) -> (Observation, Option<ScmError>) {
+/// What `answer` tells the budget of its connection, and its error, if any.
+fn classify(answer: &Answer, now: OffsetDateTime) -> (Observation, Option<ScmError>) {
     let header = |name: &str| {
-        headers
+        answer
+            .headers
             .get(name)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.trim().parse::<i64>().ok())
@@ -629,12 +742,28 @@ fn classify(
         }),
         _ => None,
     };
-    let resource = headers
+    let resource = answer
+        .headers
         .get("x-ratelimit-resource")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("core")
         .to_owned();
     (Observation::Answered { resource, rate }, None)
+}
+
+#[cfg(test)]
+impl Answer {
+    /// An answer with `status` and the error message `message`.
+    pub(crate) fn with_message(status: StatusCode, message: &str) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body: serde_json::json!({ "message": message })
+                .to_string()
+                .into_bytes(),
+            next: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -647,33 +776,26 @@ mod tests {
         OffsetDateTime::from_unix_timestamp(1_789_000_000 + seconds).unwrap()
     }
 
-    fn answer(status: u16, message: &str) -> Answer {
-        Answer {
-            status: StatusCode::from_u16(status).unwrap(),
-            body: serde_json::json!({ "message": message })
-                .to_string()
-                .into_bytes(),
-        }
-    }
-
-    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
-        let mut map = HeaderMap::new();
+    fn answer(status: u16, message: &str, pairs: &[(&'static str, &str)]) -> Answer {
+        let mut answer = Answer::with_message(StatusCode::from_u16(status).unwrap(), message);
         for (name, value) in pairs {
-            map.insert(*name, HeaderValue::from_str(value).unwrap());
+            answer
+                .headers
+                .insert(*name, HeaderValue::from_str(value).unwrap());
         }
-        map
+        answer
     }
 
     #[test]
     fn a_spent_primary_limit_waits_for_its_reset() {
         let reset = at(900).unix_timestamp().to_string();
-        let spent = headers(&[
+        let spent = [
             ("x-ratelimit-limit", "5000"),
             ("x-ratelimit-remaining", "0"),
-            ("x-ratelimit-reset", &reset),
-        ]);
+            ("x-ratelimit-reset", reset.as_str()),
+        ];
         for status in [403, 429] {
-            let (observation, error) = classify(&answer(status, "API rate limit"), &spent, at(0));
+            let (observation, error) = classify(&answer(status, "API rate limit", &spent), at(0));
             assert_eq!(
                 observation,
                 Observation::RateLimited {
@@ -687,12 +809,12 @@ mod tests {
 
     #[test]
     fn a_secondary_limit_waits_for_retry_after_or_a_minute() {
-        let retry = headers(&[("x-ratelimit-remaining", "12"), ("retry-after", "30")]);
-        let (_, error) = classify(&answer(403, "slow down"), &retry, at(0));
+        let retry = [("x-ratelimit-remaining", "12"), ("retry-after", "30")];
+        let (_, error) = classify(&answer(403, "slow down", &retry), at(0));
 
         assert_eq!(error, Some(ScmError::RateLimited { until: at(30) }));
-        let message = answer(403, "You have exceeded a secondary rate limit");
-        let (observation, _) = classify(&message, &headers(&[]), at(0));
+        let message = answer(403, "You have exceeded a secondary rate limit", &[]);
+        let (observation, _) = classify(&message, at(0));
 
         assert_eq!(
             observation,
@@ -705,7 +827,7 @@ mod tests {
 
     #[test]
     fn a_forbidden_answer_without_a_limit_goes_to_the_caller() {
-        let (observation, error) = classify(&answer(403, "protected branch"), &headers(&[]), at(0));
+        let (observation, error) = classify(&answer(403, "protected branch", &[]), at(0));
         assert_eq!(error, None);
         assert!(matches!(
             observation,
@@ -715,7 +837,7 @@ mod tests {
 
     #[test]
     fn a_too_many_requests_answer_without_a_marker_waits_a_minute() {
-        let (observation, error) = classify(&answer(429, "slow down"), &headers(&[]), at(0));
+        let (observation, error) = classify(&answer(429, "slow down", &[]), at(0));
 
         assert_eq!(error, Some(ScmError::RateLimited { until: at(60) }));
         assert_eq!(
@@ -740,7 +862,7 @@ mod tests {
 
     #[test]
     fn a_server_error_is_a_failure() {
-        let (observation, error) = classify(&answer(502, "bad gateway"), &headers(&[]), at(0));
+        let (observation, error) = classify(&answer(502, "bad gateway", &[]), at(0));
         assert_eq!(observation, Observation::Failed);
         assert!(matches!(error, Some(ScmError::Unavailable(_))));
     }
@@ -775,13 +897,13 @@ mod tests {
     #[test]
     fn an_answer_gives_its_rate_limit() {
         let reset = at(900).unix_timestamp().to_string();
-        let rate = headers(&[
+        let rate = [
             ("x-ratelimit-limit", "5000"),
             ("x-ratelimit-remaining", "4321"),
-            ("x-ratelimit-reset", &reset),
+            ("x-ratelimit-reset", reset.as_str()),
             ("x-ratelimit-resource", "graphql"),
-        ]);
-        let (observation, error) = classify(&answer(200, ""), &rate, at(0));
+        ];
+        let (observation, error) = classify(&answer(200, "", &rate), at(0));
 
         assert_eq!(error, None);
         assert_eq!(
@@ -795,5 +917,32 @@ mod tests {
                 })
             }
         );
+    }
+
+    #[test]
+    fn a_missing_permission_of_the_app_says_so() {
+        let forbidden = |message| Answer::with_message(StatusCode::FORBIDDEN, message);
+        let missing = forbidden("Resource not accessible by integration").error();
+        let ScmError::Forbidden(message) = missing else {
+            panic!("{missing:?}");
+        };
+
+        assert!(
+            message.starts_with("the GitHub App lacks a permission"),
+            "{message}"
+        );
+        assert!(message.ends_with("HTTP 403 Forbidden: Resource not accessible by integration"));
+        let rules = forbidden("Protected branch update failed").error();
+
+        assert_eq!(
+            rules,
+            ScmError::Forbidden("HTTP 403 Forbidden: Protected branch update failed".into())
+        );
+    }
+
+    #[test]
+    fn a_path_keeps_its_slashes_and_encodes_the_rest() {
+        assert_eq!(encode("cihub-temp/main/12"), "cihub-temp/main/12");
+        assert_eq!(encode("a b#?&é"), "a%20b%23%3F%26%C3%A9");
     }
 }

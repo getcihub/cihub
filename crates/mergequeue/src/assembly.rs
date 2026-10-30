@@ -14,7 +14,7 @@ use cihub_domain::{
 };
 use cihub_mq_core::{Head, TestBranch};
 use cihub_platform::{Job, MAX_ATTEMPTS, error_chain};
-use cihub_scm::{MergeIntoRef, RequiredChecks, Scm, ScmError};
+use cihub_scm::{BranchMove, DraftPr, MergeIntoRef, RequiredChecks, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -233,7 +233,9 @@ impl From<ScmError> for Step {
     fn from(err: ScmError) -> Self {
         match err {
             ScmError::Forbidden(_) => Self::GiveUp(JobError::PermissionsBlockTestBranch, None),
-            ScmError::Validation(_) => Self::Transient(error_chain(&err)),
+            ScmError::Validation(_) | ScmError::NotFastForward => {
+                Self::Transient(error_chain(&err))
+            }
             other => Self::Passing(error_chain(&other)),
         }
     }
@@ -313,7 +315,13 @@ impl Assembly<'_> {
         let temp = temp_branch(&request.test_branch).ok_or(JobError::InvalidEvent)?;
 
         self.scm
-            .set_branch(repo, &temp, &request.base_sha, true, self.class)
+            .set_branch(
+                repo,
+                &temp,
+                &request.base_sha,
+                BranchMove::Force,
+                self.class,
+            )
             .await?;
 
         let mut current = request.base_sha.clone();
@@ -348,7 +356,13 @@ impl Assembly<'_> {
         }
 
         self.scm
-            .set_branch(repo, &request.test_branch, &current, false, self.class)
+            .set_branch(
+                repo,
+                &request.test_branch,
+                &current,
+                BranchMove::FastForwardOnly,
+                self.class,
+            )
             .await?;
 
         self.scm.delete_branch(repo, &temp, self.class).await?;
@@ -376,7 +390,13 @@ impl Assembly<'_> {
         }
 
         self.scm
-            .set_branch(&self.target.repo, temp, &request.base_sha, true, self.class)
+            .set_branch(
+                &self.target.repo,
+                temp,
+                &request.base_sha,
+                BranchMove::Force,
+                self.class,
+            )
             .await?;
 
         if self.merge(temp, member).await? == MergeIntoRef::Conflict {
@@ -408,33 +428,26 @@ impl Assembly<'_> {
             &predecessors,
             &members,
         );
+        let draft = DraftPr {
+            head: request.test_branch.clone(),
+            base: target.to_owned(),
+            title,
+            body,
+        };
         let opened = self
             .scm
-            .open_draft_pr(
-                &self.target.repo,
-                &request.test_branch,
-                target,
-                &title,
-                &body,
-                self.class,
-            )
+            .open_draft_pr(&self.target.repo, &draft, self.class)
             .await;
 
         match opened {
             Ok(number) => Ok(number),
-            Err(ScmError::Validation(message)) if message.to_lowercase().contains("draft") => {
-                Err(JobError::DraftPrsNotAllowed.into())
-            }
+            Err(ScmError::DraftPrsNotAllowed) => Err(JobError::DraftPrsNotAllowed.into()),
             // The test branch holds nothing more than the target: its heads
             // are already in it.
-            Err(ScmError::Validation(message))
-                if message.to_lowercase().contains("no commits between") =>
-            {
-                Err(Step::GiveUp(
-                    JobError::MergeConflict,
-                    Some(ConflictCulprit::BaseBranch),
-                ))
-            }
+            Err(ScmError::NothingToCompare) => Err(Step::GiveUp(
+                JobError::MergeConflict,
+                Some(ConflictCulprit::BaseBranch),
+            )),
             Err(err) => Err(err.into()),
         }
     }
@@ -606,7 +619,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_scm::sim::{Fault, Sim, bot};
+    use cihub_scm::RepoCalls;
+    use cihub_scm::sim::{Fault, ScmMethod, Sim, bot};
     use ulid::Ulid;
 
     use super::*;
@@ -777,7 +791,7 @@ mod tests {
         let main = sim.add_repo(&target.repo, "main", &[("a.txt", "a")]);
         let rules = RequiredChecks {
             names: BTreeSet::from(["ci".to_owned()]),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
 
         sim.set_rules(&target.repo, "main", rules).unwrap();
@@ -873,7 +887,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(pr.draft);
+        assert!(pr.is_draft);
         assert_eq!(pr.base_branch, "main");
 
         // A second build finds the branch and the draft PR, and changes nothing.
@@ -976,7 +990,7 @@ mod tests {
         );
 
         sim.fail(Fault {
-            call: Some("set_branch"),
+            call: Some(ScmMethod::SetBranch),
             error: ScmError::Forbidden("Protected branch update failed".into()),
             times: 1,
         });
@@ -993,7 +1007,7 @@ mod tests {
         );
 
         sim.fail(Fault {
-            call: Some("merge_into_branch"),
+            call: Some(ScmMethod::MergeIntoBranch),
             error: ScmError::Unavailable("502".into()),
             times: 1,
         });
@@ -1004,7 +1018,7 @@ mod tests {
         ));
 
         sim.fail(Fault {
-            call: Some("merge_into_branch"),
+            call: Some(ScmMethod::MergeIntoBranch),
             error: ScmError::Validation("422".into()),
             times: 1,
         });
@@ -1021,10 +1035,8 @@ mod tests {
         );
 
         sim.fail(Fault {
-            call: Some("open_draft_pr"),
-            error: ScmError::Validation(
-                "Draft pull requests are not supported in this repository.".into(),
-            ),
+            call: Some(ScmMethod::OpenDraftPr),
+            error: ScmError::DraftPrsNotAllowed,
             times: 1,
         });
 

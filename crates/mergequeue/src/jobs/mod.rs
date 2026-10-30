@@ -21,7 +21,7 @@ use cihub_domain::{
 };
 use cihub_mq_core::PrObservation;
 use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
-use cihub_scm::{PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser, check_passed};
+use cihub_scm::{PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser};
 use cihub_store::{PgPool, StoreError, begin_system, deposit_fact, ensure_user};
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
@@ -194,9 +194,9 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks) -> Mergea
         .names
         .iter()
         .filter(|name| !is_own_context(name))
-        .all(|name| check_passed(pr, name));
+        .all(|name| pr.has_passed(name));
 
-    if others_pass && !required_own.iter().all(|name| check_passed(pr, name)) {
+    if others_pass && !required_own.iter().all(|name| pr.has_passed(name)) {
         Mergeability::Mergeable
     } else {
         Mergeability::Blocked
@@ -215,7 +215,7 @@ pub(crate) fn observation(
         state: pr.state,
         head_sha: pr.head_sha.clone(),
         base_branch: pr.base_branch.clone(),
-        draft: pr.draft,
+        draft: pr.is_draft,
         labels: pr.labels.clone(),
         mergeability: mergeability(pr, required),
         review_decision: pr.review_decision,
@@ -458,11 +458,11 @@ mod tests {
         );
         let required = RequiredChecks {
             names: BTreeSet::from(["ci".to_owned(), queue.to_owned()]),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
         let both_required = RequiredChecks {
             names: BTreeSet::from(["ci".to_owned(), queue.to_owned(), conditions.to_owned()]),
-            up_to_date: false,
+            requires_up_to_date: false,
         };
         let not_required = RequiredChecks::default();
         let blocked = Mergeability::Blocked;

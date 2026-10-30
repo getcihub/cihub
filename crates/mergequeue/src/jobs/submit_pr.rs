@@ -153,7 +153,7 @@ fn not_open(pr: &PrSnapshot) -> Option<&'static str> {
     match pr.state {
         PrState::Merged => Some("merged"),
         PrState::Closed => Some("closed"),
-        PrState::Open if pr.draft => Some("a draft"),
+        PrState::Open if pr.is_draft => Some("a draft"),
         PrState::Open => None,
     }
 }

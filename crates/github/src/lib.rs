@@ -4,11 +4,18 @@
 //! values of GitHub into the neutral ones of `cihub-scm`. It writes nothing in
 //! Postgres; the caller writes the budgets that it reads here.
 
+mod apps;
 mod auth;
 mod budget;
+mod checks;
 mod client;
+mod git;
+mod graphql;
+mod issues;
+mod people;
+mod pulls;
+mod rules;
 mod scm;
-mod sign_in;
 mod signature;
 mod translate;
 mod webhook;
@@ -16,6 +23,6 @@ mod webhook;
 pub use auth::{AppKey, KeyError};
 pub use budget::{Budget, Rate};
 pub use client::{ClientError, Clock, GithubApp, GithubConfig, SignInClient};
-pub use sign_in::{SETUP_PATH, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH};
+pub use people::{SETUP_PATH, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH};
 pub use translate::{TranslateError, translate};
 pub use webhook::{ReceivedDelivery, WEBHOOK_PATH, WebhookError, receive};

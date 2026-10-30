@@ -1,5 +1,5 @@
 //! The budget of a connection: what its rate limit headers say, and the mode
-//! that follows (`specs/RELIABILITY.md`). Pure: the caller gives the time.
+//! that follows. Pure: the caller gives the time.
 
 use std::collections::BTreeMap;
 
@@ -7,13 +7,21 @@ use cihub_domain::{ConnectionMode, JobClass};
 use cihub_scm::ScmError;
 use time::{Duration, OffsetDateTime};
 
+/// Below this share of its rate limit, a connection is throttled.
 const THROTTLE_BELOW: f64 = 0.2;
+/// Above this share, a throttled connection starts to recover.
 const RECOVER_ABOVE: f64 = 0.4;
+/// How long the share stays above [`RECOVER_ABOVE`] before the connection is
+/// normal again.
 const RECOVER_AFTER: Duration = Duration::minutes(5);
+/// The failures in a row after which the SCM is unavailable.
 const FAILURES_TO_UNAVAILABLE: u32 = 3;
+/// How often an unavailable connection lets one call through as a probe.
 const PROBE_EVERY: Duration = Duration::seconds(30);
+/// The wait after a rate limit that gives no time of reset.
 pub const SECONDARY_WAIT: Duration = Duration::minutes(1);
 
+/// A rate limit of GitHub, as the headers of an answer give it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rate {
     pub limit: u32,
@@ -22,14 +30,17 @@ pub struct Rate {
 }
 
 impl Rate {
+    /// The share of the limit that remains, from 0 to 1.
     fn share(self) -> f64 {
         if self.limit == 0 {
             return 1.0;
+        } else {
+            f64::from(self.remaining) / f64::from(self.limit)
         }
-        f64::from(self.remaining) / f64::from(self.limit)
     }
 }
 
+/// What a call to GitHub tells about the budget of its connection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Observation {
     Answered {
@@ -43,6 +54,7 @@ pub enum Observation {
     Failed,
 }
 
+/// The budget of a connection: its rate limits, its pause and its mode.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Budget {
     pub rates: BTreeMap<String, Rate>,
@@ -69,6 +81,8 @@ impl Default for Budget {
 }
 
 impl Budget {
+    /// Lets a call of `class` go now, or refuses it.
+    ///
     /// # Errors
     ///
     /// The error that the call returns in place of an answer.
@@ -95,6 +109,7 @@ impl Budget {
         Ok(())
     }
 
+    /// Updates the budget with what a call told.
     pub fn observe(&mut self, observation: Observation, now: OffsetDateTime) {
         match observation {
             Observation::Answered { resource, rate } => {
@@ -132,6 +147,7 @@ impl Budget {
         }
     }
 
+    /// The rate limit with the smallest share left.
     pub fn lowest(&self) -> Option<Rate> {
         self.rates
             .values()
@@ -139,6 +155,8 @@ impl Budget {
             .min_by(|a, b| a.share().total_cmp(&b.share()))
     }
 
+    /// Throttles the connection, or lets it recover, after the share of its
+    /// lowest rate limit.
     fn follow_budget(&mut self, now: OffsetDateTime) {
         let share = self.lowest().map_or(1.0, Rate::share);
         if share < THROTTLE_BELOW {
@@ -154,6 +172,7 @@ impl Budget {
         }
     }
 
+    /// Sets the mode and its reason.
     fn set_mode(&mut self, mode: ConnectionMode, reason: Option<String>) {
         self.mode = mode;
         self.mode_reason = reason;

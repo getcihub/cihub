@@ -7,7 +7,7 @@
 use cihub_domain::{Actor, EventKind, EventType, JobClass, QueueId, RunId, RunStatus};
 use cihub_mq_core::CheckRead;
 use cihub_platform::{Job, enqueue_job};
-use cihub_scm::Scm;
+use cihub_scm::{BranchMove, Scm};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -121,7 +121,7 @@ pub(crate) async fn read_checks(
             repo,
             &request.test_branch,
             &request.test_sha,
-            false,
+            BranchMove::FastForwardOnly,
             job.class,
         )
         .await?;

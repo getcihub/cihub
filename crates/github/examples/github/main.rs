@@ -63,7 +63,9 @@ use std::sync::Arc;
 
 use cihub_domain::{ConnectionId, JobClass};
 use cihub_github::{AppKey, GithubApp, GithubConfig};
-use cihub_scm::{CommitStatus, ConnectionRef, RepoRef, Scm, ScmUser, StatusUpdate};
+use cihub_scm::{
+    BranchMove, CommitStatus, ConnectionRef, RepoCalls, RepoRef, ScmUser, StatusUpdate,
+};
 use secrecy::SecretString;
 use time::OffsetDateTime;
 use ulid::Ulid;
@@ -271,7 +273,8 @@ async fn branch_roundtrip(app: &GithubApp, repo: &RepoRef, from: &str) -> Result
     show("head of the source branch", &head);
     show("before", &app.branch_head(repo, BRANCH, CLASS).await?);
     for _ in 0..2 {
-        app.set_branch(repo, BRANCH, &head, false, CLASS).await?;
+        app.set_branch(repo, BRANCH, &head, BranchMove::FastForwardOnly, CLASS)
+            .await?;
     }
 
     show(
