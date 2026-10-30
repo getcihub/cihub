@@ -305,7 +305,8 @@ pub(crate) async fn observe(
     for (number, status) in &statuses {
         let number = i64::try_from(*number).unwrap_or(i64::MAX);
         if let Some(desired_hash) = keep_status(&mut tx, &target, number, status, now).await? {
-            let publish = publish_job(&target, number, &desired_hash, &job.idempotency_key);
+            let publish = publish_job(&target, number, &desired_hash, &job.idempotency_key)
+                .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
             enqueue_job(&mut tx, &publish, now, now).await?;
         }
     }
@@ -327,7 +328,7 @@ async fn keep_status(
 ) -> Result<Option<String>, Failure> {
     let desired = serde_json::to_value(status)
         .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
-    let desired_hash = hash(status);
+    let desired_hash = hash(status).map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
     let is_unpublished: Option<bool> = sqlx::query_scalar(
         "INSERT INTO pr_conditions (org_id, queue_id, pr_number, head_sha, desired, desired_hash,
                                     observed_at)
@@ -353,14 +354,26 @@ async fn keep_status(
 
 /// The publication of the status `status_hash` after the read `read`, the key of
 /// its job: a status that comes back to an earlier value is published again.
-fn publish_job(target: &QueueTarget, pr_number: i64, status_hash: &str, read: &str) -> Job {
+fn publish_job(
+    target: &QueueTarget,
+    pr_number: i64,
+    status_hash: &str,
+    read: &str,
+) -> Result<Job, serde_json::Error> {
     let key = format!(
         "{PUBLISH_CONDITIONS}:{}-{pr_number}-{}:1",
         target.queue_id,
-        hash(&(status_hash, read))
+        hash(&(status_hash, read))?
     );
     let payload = json!(PublishConditions { pr_number });
-    job(target, key, PUBLISH_CONDITIONS, JobClass::Repair, payload)
+
+    Ok(job(
+        target,
+        key,
+        PUBLISH_CONDITIONS,
+        JobClass::Repair,
+        payload,
+    ))
 }
 
 /// Makes the SCM show the last status of the PR. One job at a time publishes

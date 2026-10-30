@@ -445,7 +445,7 @@ mod tests {
             None,
         );
 
-        assert_ne!(hash(&rendered), hash(&bare));
+        assert_ne!(hash(&rendered).unwrap(), hash(&bare).unwrap());
     }
 
     #[test]

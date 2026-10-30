@@ -122,7 +122,7 @@ pub(crate) async fn converge_surfaces(
             history,
             page.as_deref(),
         );
-        let desired_hash = hash(&rendered);
+        let desired_hash = hash(&rendered).map_err(MergeQueueError::Payload)?;
         if known
             .iter()
             .any(|(n, h)| *n == number && *h == desired_hash)

@@ -93,13 +93,18 @@ pub(crate) fn render(
 }
 
 /// The hash of a rendering: a new one asks for a new publication.
-pub(crate) fn hash(rendered: &impl Serialize) -> String {
-    let bytes = serde_json::to_vec(rendered).unwrap_or_default();
+///
+/// # Errors
+///
+/// The rendering does not serialize to JSON.
+pub(crate) fn hash(rendered: &impl Serialize) -> Result<String, serde_json::Error> {
+    let bytes = serde_json::to_vec(rendered)?;
     let digest = Sha256::digest(bytes);
-    digest.iter().take(8).fold(String::new(), |mut hex, byte| {
+
+    Ok(digest.iter().take(8).fold(String::new(), |mut hex, byte| {
         let _ = write!(hex, "{byte:02x}");
         hex
-    })
+    }))
 }
 
 fn status_state(state: ItemState) -> StatusState {
@@ -718,8 +723,8 @@ mod tests {
             &[],
             None,
         );
-        assert_ne!(hash(&rendered), hash(&other));
-        assert_eq!(hash(&rendered), hash(&rendered.clone()));
+        assert_ne!(hash(&rendered).unwrap(), hash(&other).unwrap());
+        assert_eq!(hash(&rendered).unwrap(), hash(&rendered.clone()).unwrap());
     }
 
     #[test]
