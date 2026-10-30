@@ -34,10 +34,13 @@ macro_rules! id_type {
                 Self(Ulid::generate())
             }
 
+            /// The identifier of `ulid`, for a value read back or made by
+            /// the caller.
             pub const fn from_ulid(ulid: Ulid) -> Self {
                 Self(ulid)
             }
 
+            /// The ULID of the identifier, without its prefix.
             pub const fn as_ulid(&self) -> &Ulid {
                 &self.0
             }
@@ -76,12 +79,18 @@ macro_rules! id_type {
 id_type!(
     /// Tenancy boundary: every other record carries an `OrgId`.
     OrgId => "org",
+    /// A repository that a connection reaches; a repository that moves to
+    /// another connection gets a new one.
     RepoId => "repo",
+    /// The queue of one target branch of a repository.
     QueueId => "queue",
     /// One queue item per PR submission; a resubmission creates a new item.
     ItemId => "item",
+    /// A test group: one PR, a batch, or a half of a bisection.
     GroupId => "group",
+    /// One attempt to test a group; the name of its test branch ends with it.
     RunId => "run",
+    /// One event of the log of a queue.
     EventId => "event",
     /// How CIHub reaches the repositories of an SCM account.
     ConnectionId => "connection",
@@ -89,6 +98,7 @@ id_type!(
     UserId => "user",
     /// The row of an API token; the secret itself is `cht_…`.
     ApiTokenId => "apitoken",
+    /// One entry of the audit log of an organization.
     AuditEntryId => "audit",
     /// A session of a user, global; the secret itself is `chs_…` for the
     /// dashboard, `chc_…` for the command line.
@@ -96,6 +106,8 @@ id_type!(
     /// A sign-in of the command line in progress, global; its secret is
     /// `chd_…`.
     DeviceCodeId => "devicecode",
+    /// One API request, for the logs; never stored.
+    RequestId => "request",
 );
 
 /// Parse errors, in the order the checks run. The first five match the
@@ -105,11 +117,17 @@ pub enum IdParseError {
     /// Empty, longer than 83 characters, or a main part that is not 32
     /// characters.
     InvalidSize,
+    /// No `_` between the prefix and the main part.
     NoSeparator,
+    /// A prefix that is not 1 to 50 ASCII letters.
     InvalidType,
+    /// A character of the main part outside the base32 alphabet.
     InvalidId,
+    /// The checksum does not match the prefix and the ULID.
     InvalidChecksum,
+    /// A valid identifier of another type.
     WrongType {
+        /// The prefix that the type expects.
         expected: &'static str,
     },
 }

@@ -89,6 +89,20 @@ impl MembershipRole {
     }
 }
 
+closed_enum! {
+    /// What a user may do on a repository, from the lowest to the highest.
+    pub enum Permission {
+        /// No access to the repository.
+        None,
+        /// Reads the repository.
+        Read,
+        /// Pushes to the repository.
+        Write,
+        /// Administers the repository.
+        Admin,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

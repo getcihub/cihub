@@ -2,15 +2,14 @@
 //! GitHub pull request, a GitLab merge request. Each SCM adapter translates
 //! its own values into these ones.
 
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-
-use crate::{CheckConclusion, CheckKind, CheckStatus};
-
 closed_enum! {
+    /// Whether the PR is open on the SCM.
     pub enum PrState {
+        /// The PR can still merge.
         Open,
+        /// The PR was closed without a merge.
         Closed,
+        /// The PR merged, by the queue or outside it.
         Merged,
     }
 }
@@ -36,42 +35,14 @@ closed_enum! {
     /// The review decision of the PR.
     #[derive(Default)]
     pub enum ReviewDecision {
+        /// The reviews that the rules require approve the PR.
         Approved,
+        /// A reviewer asked for changes.
         ChangesRequested,
+        /// The rules require a review that the PR does not have yet.
         ReviewRequired,
         /// No review rule applies.
         #[default]
         None,
     }
-}
-
-closed_enum! {
-    /// What a user may do on a repository, from the lowest to the highest.
-    pub enum Permission {
-        /// No access to the repository.
-        None,
-        /// Reads the repository.
-        Read,
-        /// Pushes to the repository.
-        Write,
-        /// Administers the repository.
-        Admin,
-    }
-}
-
-/// One check or commit status, as the SCM reports it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CheckReport {
-    pub name: String,
-    pub kind: CheckKind,
-    pub status: CheckStatus,
-    /// `None` while the check has not concluded.
-    pub conclusion: Option<CheckConclusion>,
-    pub details_url: Option<String>,
-    /// A commit status gives the time of its state only: `started_at` while
-    /// it is pending, `completed_at` once it concluded.
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub started_at: Option<OffsetDateTime>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub completed_at: Option<OffsetDateTime>,
 }

@@ -7,9 +7,13 @@
 
 use crate::id::{ALPHABET, push_base32};
 
+/// The prefix of an API token.
 pub const API_TOKEN_PREFIX: &str = "cht_";
+/// The prefix of a session token of the dashboard.
 pub const SESSION_TOKEN_PREFIX: &str = "chs_";
+/// The prefix of a session token of the command line.
 pub const CLI_SESSION_TOKEN_PREFIX: &str = "chc_";
+/// The prefix of a device code, the secret of a sign-in of the command line.
 pub const DEVICE_CODE_PREFIX: &str = "chd_";
 const TOKEN_LEN: usize = 36;
 /// Twenty consonants: no code spells a word, and none is mistaken for a
@@ -17,6 +21,7 @@ const TOKEN_LEN: usize = 36;
 const USER_CODE_ALPHABET: &[u8; 20] = b"BCDFGHJKLMNPQRSTVWXZ";
 const USER_CODE_HALF: usize = 4;
 
+/// The text of an API token of the random `bytes`.
 pub fn format_api_token(bytes: &[u8; 20]) -> String {
     format_token(API_TOKEN_PREFIX, bytes)
 }
@@ -27,6 +32,7 @@ pub fn is_api_token(text: &str) -> bool {
     has_token_form(API_TOKEN_PREFIX, text)
 }
 
+/// The text of a session token of the dashboard of the random `bytes`.
 pub fn format_session_token(bytes: &[u8; 20]) -> String {
     format_token(SESSION_TOKEN_PREFIX, bytes)
 }
@@ -37,6 +43,7 @@ pub fn is_session_token(text: &str) -> bool {
     has_token_form(SESSION_TOKEN_PREFIX, text)
 }
 
+/// The text of a session token of the command line of the random `bytes`.
 pub fn format_cli_session_token(bytes: &[u8; 20]) -> String {
     format_token(CLI_SESSION_TOKEN_PREFIX, bytes)
 }
@@ -47,10 +54,13 @@ pub fn is_cli_session_token(text: &str) -> bool {
     has_token_form(CLI_SESSION_TOKEN_PREFIX, text)
 }
 
+/// The text of a device code of the random `bytes`.
 pub fn format_device_code(bytes: &[u8; 20]) -> String {
     format_token(DEVICE_CODE_PREFIX, bytes)
 }
 
+/// Whether `text` has the form of a device code. It says nothing of its
+/// existence: the store looks for its hash.
 pub fn is_device_code(text: &str) -> bool {
     has_token_form(DEVICE_CODE_PREFIX, text)
 }

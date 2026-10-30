@@ -1,56 +1,76 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{
-    CheckConclusion, CheckKind, CheckReport, CheckStatus, GroupId, GroupKind, GroupState, ItemId,
-    OrgId, QueueId, Reason, RunId, RunStatus,
-};
-
-/// The unit that is tested and held in `pending_failure`: one PR or a batch.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TestGroup {
-    pub id: GroupId,
-    pub org_id: OrgId,
-    pub queue_id: QueueId,
-    pub kind: GroupKind,
-    pub state: GroupState,
-    /// Reason of the last transition; the members receive the same one.
-    pub state_reason: Reason,
-    /// Members in queue order; each one merges as its own commit.
-    pub item_ids: Vec<ItemId>,
-    /// The failed batch that a bisection half comes from.
-    pub parent_group_id: Option<GroupId>,
-    /// Items the group is tested on top of, in queue order. A run stays valid
-    /// only while this set and `base_sha` do not change.
-    pub predecessor_ids: Vec<ItemId>,
-    pub base_sha: String,
-}
+use crate::{GroupId, OrgId, QueueId, Reason, RunId};
 
 /// One attempt to test a group; a group has more than one after retries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestRun {
+    /// The run; its test branch carries it.
     pub id: RunId,
+    /// The organization of the queue.
     pub org_id: OrgId,
+    /// The queue of the group.
     pub queue_id: QueueId,
+    /// The group that the run tests.
     pub group_id: GroupId,
     /// Starts at 1; the failure budget counts attempts.
     pub attempt: u32,
+    /// The branch that holds the test commit (`crate::test_branch`).
     pub test_branch: String,
     /// `None` until assembly creates the test commit.
     pub test_sha: Option<String>,
+    /// The draft PR from the test branch that triggers the CI; `None` before
+    /// the assembly, or when the trigger is not `draft_pr`.
     pub draft_pr_number: Option<u64>,
+    /// Where the run is in its life.
     pub status: RunStatus,
+    /// The names of the checks that must pass on the test commit; empty
+    /// until the assembly resolves them.
     pub required_statuses: Vec<String>,
     /// `None` until assembly resolves the required statuses.
     pub required_statuses_source: Option<RequiredStatusesSource>,
+    /// When the queue created the run.
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
+    /// When the run reached a terminal status; `None` before.
     #[serde(with = "time::serde::rfc3339::option")]
     pub ended_at: Option<OffsetDateTime>,
+    /// Why the run failed; `None` for a run that did not fail.
     pub failure_reason: Option<Reason>,
     /// Required statuses that failed the run.
     pub failure_causing_statuses: Vec<String>,
+    /// What a member conflicts with, when the assembly ended on a merge
+    /// conflict; `None` otherwise.
     pub conflict_culprit: Option<ConflictCulprit>,
+}
+
+closed_enum! {
+    /// Where a run is in its life.
+    pub enum RunStatus {
+        /// The assembly job builds the test branch.
+        Assembling,
+        /// The CI tests the test commit.
+        InProgress,
+        /// Every required status passed on the test commit.
+        Succeeded,
+        /// A required status failed, or the assembly failed.
+        Failed,
+        /// The queue replaced the run: the group was given up or proved by a
+        /// successor.
+        Interrupted,
+        /// A member of the group was cancelled.
+        Cancelled,
+        /// The run lasted longer than `testing_timeout_minutes`.
+        TimedOut,
+    }
+}
+
+impl RunStatus {
+    /// Whether the run can change status no more.
+    pub const fn is_terminal(self) -> bool {
+        !matches!(self, Self::Assembling | Self::InProgress)
+    }
 }
 
 /// What the member of a group conflicts with when its merge into the test
@@ -59,7 +79,10 @@ pub struct TestRun {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ConflictCulprit {
     /// A PR ahead in the queue, merged in the test branch before the member.
-    QueuePr { pr_number: u64 },
+    QueuePr {
+        /// The number of the PR ahead.
+        pr_number: u64,
+    },
     /// The target branch itself: the member conflicts with it alone.
     BaseBranch,
 }
@@ -75,100 +98,9 @@ closed_enum! {
     }
 }
 
-/// Last report of a check run or commit status on the test SHA of a run.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CheckObservation {
-    pub org_id: OrgId,
-    pub run_id: RunId,
-    pub name: String,
-    pub kind: CheckKind,
-    /// The name is in the required statuses of the run.
-    pub required: bool,
-    pub status: CheckStatus,
-    /// `None` while the check has not concluded.
-    pub conclusion: Option<CheckConclusion>,
-    pub details_url: Option<String>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub started_at: Option<OffsetDateTime>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub completed_at: Option<OffsetDateTime>,
-    #[serde(with = "time::serde::rfc3339")]
-    pub observed_at: OffsetDateTime,
-}
-
-impl CheckObservation {
-    /// Whether `report` says the same as this observation.
-    pub fn reports_the_same(&self, report: &CheckReport) -> bool {
-        self.status == report.status
-            && self.conclusion == report.conclusion
-            && self.details_url == report.details_url
-            && self.started_at == report.started_at
-            && self.completed_at == report.completed_at
-    }
-
-    /// Whether `report` would take this check back to an earlier status: a
-    /// late delivery of the same execution, as a `queued` after the
-    /// `in_progress`, or an `in_progress` after the `completed`. A check that
-    /// starts again after its end, as a rerun, does not; without both times,
-    /// or within the same second as the end, nothing tells it, and the check
-    /// waits for its next conclusion.
-    pub fn is_regressed_by(&self, report: &CheckReport) -> bool {
-        let is_rerun = report
-            .started_at
-            .zip(self.completed_at)
-            .is_some_and(|(started, ended)| started > ended);
-
-        report.status < self.status && !is_rerun
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_check_goes_back_only_for_a_rerun() {
-        let start = OffsetDateTime::UNIX_EPOCH;
-        let at = |minutes| Some(start + time::Duration::minutes(minutes));
-        let completed = CheckObservation {
-            org_id: OrgId::from_ulid(ulid::Ulid(1)),
-            run_id: RunId::from_ulid(ulid::Ulid(2)),
-            name: "Smoke".into(),
-            kind: CheckKind::Check,
-            required: true,
-            status: CheckStatus::Completed,
-            conclusion: Some(CheckConclusion::Success),
-            details_url: None,
-            started_at: at(10),
-            completed_at: at(20),
-            observed_at: start,
-        };
-        let report = |status, started_at| CheckReport {
-            name: "Smoke".into(),
-            kind: CheckKind::Check,
-            status,
-            conclusion: None,
-            details_url: None,
-            started_at,
-            completed_at: None,
-        };
-
-        assert!(completed.is_regressed_by(&report(CheckStatus::InProgress, at(10))));
-        assert!(completed.is_regressed_by(&report(CheckStatus::Queued, None)));
-        assert!(!completed.is_regressed_by(&report(CheckStatus::Queued, at(25))));
-        assert!(!completed.is_regressed_by(&report(CheckStatus::Completed, at(10))));
-
-        let running = CheckObservation {
-            status: CheckStatus::InProgress,
-            conclusion: None,
-            completed_at: None,
-            ..completed
-        };
-
-        assert!(running.is_regressed_by(&report(CheckStatus::Queued, at(5))));
-        assert!(!running.is_regressed_by(&report(CheckStatus::InProgress, at(10))));
-        assert!(!running.is_regressed_by(&report(CheckStatus::Completed, at(10))));
-    }
 
     #[test]
     fn conflict_culprit_is_tagged_by_kind() {

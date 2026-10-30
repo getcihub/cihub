@@ -15,8 +15,11 @@ pub trait Lifecycle: Copy + Eq + fmt::Display + 'static {
 /// A transition that the table does not permit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TransitionError<S> {
+    /// The state before; `None` for a creation.
     pub from: Option<S>,
+    /// The state after.
     pub to: S,
+    /// The reason that the table refuses for this transition.
     pub reason: Reason,
 }
 
