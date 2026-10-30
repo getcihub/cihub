@@ -373,19 +373,11 @@ impl Work<'_> {
                     ));
                 }
                 // The draft PR of a run is the queue's own: it shows no status.
-                let is_run_draft = snapshot
-                    .runs
-                    .values()
-                    .any(|run| run.draft_pr_number == Some(number));
-                if !is_run_draft {
+                if !snapshot.is_draft_pr_of_run(number) {
                     let subject = subject(delivery_id);
                     jobs.extend(observe_jobs(conn, self.target, &subject, &[number]).await?);
                 }
-                let tracked = snapshot.current_item(number).is_some()
-                    || snapshot.requests.values().any(|r| {
-                        matches!(r, cihub_mq_core::Request::Submit { pr_number, .. } if *pr_number == number)
-                    });
-                if tracked {
+                if snapshot.is_tracked(number) {
                     jobs.push(refresh_after(self.target, delivery_id, vec![number]));
                 } else if let Some(label) = label_added
                     && self.settings.label_commands_enabled.value
@@ -460,12 +452,7 @@ impl Work<'_> {
         facts: &mut Vec<Event>,
     ) -> Result<bool, MergeQueueError> {
         let snapshot = &self.log.snapshot;
-        let live = snapshot
-            .runs
-            .values()
-            .any(|run| !run.status.is_terminal() && run.test_sha.as_deref() == Some(&sha));
-
-        if live {
+        if snapshot.live_run_of_test_sha(&sha).is_some() {
             facts.push(self.fact(
                 Actor::System,
                 EventKind::CheckObserved {

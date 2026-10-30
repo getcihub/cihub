@@ -969,7 +969,7 @@ pub(super) async fn cancel(
     ApiPath(path): ApiPath<PrPath>,
 ) -> Result<StatusCode, ApiError> {
     give(&state, &grant, &path, |item_id, item_state| {
-        if item_state.is_terminal() {
+        if !item_state.can_cancel() {
             return Err(ApiError::new(
                 ErrorCode::ItemEnded,
                 format!("the item is `{item_state}`"),
@@ -1002,7 +1002,7 @@ pub(super) async fn restart(
     ApiPath(path): ApiPath<PrPath>,
 ) -> Result<StatusCode, ApiError> {
     give(&state, &grant, &path, |item_id, item_state| {
-        if !matches!(item_state, ItemState::Testing | ItemState::PendingFailure) {
+        if !item_state.can_restart() {
             return Err(ApiError::new(
                 ErrorCode::ItemNotInTest,
                 format!("only an item in test can restart; this one is `{item_state}`"),

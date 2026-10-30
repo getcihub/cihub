@@ -300,11 +300,7 @@ pub(crate) async fn project(
             one_row(done, event)?;
         }
         EventKind::CheckObserved { test_sha, check } => {
-            let run = after
-                .runs
-                .values()
-                .find(|r| !r.status.is_terminal() && r.test_sha.as_deref() == Some(test_sha))
-                .ok_or_else(mismatch)?;
+            let run = after.live_run_of_test_sha(test_sha).ok_or_else(mismatch)?;
             let observed = after
                 .checks
                 .get(&run.id)

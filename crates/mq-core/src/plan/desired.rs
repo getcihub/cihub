@@ -10,9 +10,7 @@ use crate::Snapshot;
 use crate::surface::{BatchWait, Surface, surface};
 
 use super::{CheckRead, Desired, Head, Merge, TestBranch};
-use crate::plan::reads::{
-    CHECK_READ_EVERY, grid, last_report, live_items, read_due, runs_in_progress, target_points,
-};
+use crate::plan::reads::{CHECK_READ_EVERY, grid, last_report, read_due, target_points};
 use crate::plan::rules::formation::{Next, direct_merge, merge_ready, next_group};
 
 pub(super) fn desired(
@@ -73,10 +71,12 @@ pub(super) fn desired(
             .collect()
     };
 
-    let observe = live_items(s)
+    let observe = s
+        .live_items()
         .filter_map(|item| read_due(s, item, now))
         .collect();
-    let check_reads = runs_in_progress(s)
+    let check_reads = s
+        .runs_in_progress()
         .filter_map(|run| {
             let (point, _) = grid(last_report(s, run), CHECK_READ_EVERY, now);
             Some(CheckRead {
@@ -120,7 +120,7 @@ pub(super) fn surfaces(
         _ => None,
     };
 
-    for item in live_items(s) {
+    for item in s.live_items() {
         let mut surface = surface(s, &order, item);
         if let Some((members, until)) = &waiting
             && members.iter().any(|m| m.id == item.id)

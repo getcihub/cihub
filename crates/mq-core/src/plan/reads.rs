@@ -1,7 +1,7 @@
 //! Read points of the PRs, the checks and the target branch, and the next wake-up.
 
 use cihub_config::QueueSettings;
-use cihub_domain::{Item, Mergeability, RunStatus, TestRun};
+use cihub_domain::{Item, Mergeability, TestRun};
 use time::{Duration, OffsetDateTime};
 
 use crate::Snapshot;
@@ -63,13 +63,6 @@ pub(super) fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option
     })
 }
 
-/// The live items whose PR CIHub reads.
-pub(super) fn live_items(s: &Snapshot) -> impl Iterator<Item = &Item> {
-    s.items
-        .values()
-        .filter(|i| i.is_current && !i.state.is_terminal())
-}
-
 /// The last point of a grid of `every` minutes from `base` at or before
 /// `now`, without `base` itself, and the next point after `now`.
 pub(super) fn grid(
@@ -92,12 +85,6 @@ pub(super) fn last_report(s: &Snapshot, run: &TestRun) -> OffsetDateTime {
         .flat_map(|checks| checks.values())
         .map(|o| o.observed_at)
         .fold(run.started_at, OffsetDateTime::max)
-}
-
-pub(super) fn runs_in_progress(s: &Snapshot) -> impl Iterator<Item = &TestRun> {
-    s.runs
-        .values()
-        .filter(|r| r.status == RunStatus::InProgress)
 }
 
 /// The queue reads the head of its target while it has work: from the last
@@ -135,9 +122,9 @@ pub(super) fn wake_at(
 ) -> Option<OffsetDateTime> {
     let not_ready = Duration::hours(i64::from(settings.not_ready_timeout_hours.value));
     let testing = Duration::minutes(i64::from(settings.testing_timeout_minutes.value));
-    let reads = live_items(s).map(|item| read_points(item, now).1);
+    let reads = s.live_items().map(|item| read_points(item, now).1);
     let timeouts = not_ready_items(s).map(|item| item.submitted_at + not_ready);
-    let runs = runs_in_progress(s).flat_map(|r| {
+    let runs = s.runs_in_progress().flat_map(|r| {
         let (_, next_read) = grid(last_report(s, r), CHECK_READ_EVERY, now);
         [r.started_at + testing, next_read]
     });

@@ -152,39 +152,34 @@ pub(in crate::plan) fn pr_changes(
     _: OffsetDateTime,
     _: &mut IdGen,
 ) -> Option<Step> {
-    s.items
-        .values()
-        .filter(|i| i.is_current && !i.state.is_terminal())
-        .find_map(|item| {
-            let observed = s.prs.get(&item.pr_number)?;
-            let pr = &observed.value;
+    s.live_items().find_map(|item| {
+        let observed = s.prs.get(&item.pr_number)?;
+        let pr = &observed.value;
 
-            let (to, reason) = if pr.state == PrState::Merged {
-                if merge_ready(s, item)
-                    || direct_merge(s, settings).is_some_and(|d| d.id == item.id)
-                {
-                    return None;
-                }
-
-                (ItemState::Merged, Reason::ManualMerge)
-            } else if pr.state == PrState::Closed {
-                (ItemState::Cancelled, Reason::PrClosed)
-            } else if pr.head_sha != item.head_sha {
-                (ItemState::Cancelled, Reason::PrPushedTo)
-            } else if pr.base_branch != s.target_branch {
-                (ItemState::Cancelled, Reason::PrBaseBranchChanged)
-            } else if pr.draft {
-                (ItemState::Cancelled, Reason::PrConvertedToDraft)
-            } else if item.submitted_via == cihub_domain::SubmittedVia::Label
-                && !pr.labels.contains(&settings.enqueue_label.value)
-            {
-                (ItemState::Cancelled, Reason::LabelRemoved)
-            } else {
+        let (to, reason) = if pr.state == PrState::Merged {
+            if merge_ready(s, item) || direct_merge(s, settings).is_some_and(|d| d.id == item.id) {
                 return None;
-            };
+            }
 
-            Step::one(Some(observed.fact_id), item_to(item, to, reason))
-        })
+            (ItemState::Merged, Reason::ManualMerge)
+        } else if pr.state == PrState::Closed {
+            (ItemState::Cancelled, Reason::PrClosed)
+        } else if pr.head_sha != item.head_sha {
+            (ItemState::Cancelled, Reason::PrPushedTo)
+        } else if pr.base_branch != s.target_branch {
+            (ItemState::Cancelled, Reason::PrBaseBranchChanged)
+        } else if pr.draft {
+            (ItemState::Cancelled, Reason::PrConvertedToDraft)
+        } else if item.submitted_via == cihub_domain::SubmittedVia::Label
+            && !pr.labels.contains(&settings.enqueue_label.value)
+        {
+            (ItemState::Cancelled, Reason::LabelRemoved)
+        } else {
+            return None;
+        };
+
+        Step::one(Some(observed.fact_id), item_to(item, to, reason))
+    })
 }
 
 /// An item that stays `not_ready` too long leaves the queue.

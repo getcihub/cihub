@@ -218,7 +218,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             unmet_conditions,
             required_checks,
         } => {
-            if !tracks_pr(snapshot, *pr_number) {
+            if !snapshot.is_tracked(*pr_number) {
                 return Outcome::Ignored;
             }
 
@@ -255,11 +255,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             target_pushed(snapshot, event, before.as_deref(), after)
         }
         EventKind::CheckObserved { test_sha, check } => {
-            let Some(run) = snapshot
-                .runs
-                .values()
-                .find(|r| !r.status.is_terminal() && r.test_sha.as_deref() == Some(test_sha))
-            else {
+            let Some(run) = snapshot.live_run_of_test_sha(test_sha) else {
                 return Outcome::Ignored;
             };
 
@@ -307,7 +303,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             head_sha,
             targets,
         } => {
-            if !tracks_pr(snapshot, *pr_number) {
+            if !snapshot.is_tracked(*pr_number) {
                 return Outcome::Ignored;
             }
 
@@ -432,15 +428,6 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
         | EventKind::QueueTransitioned { .. }
         | EventKind::QueueWindowChanged { .. } => Outcome::Ignored,
     }
-}
-
-/// A PR is tracked while it has a live item or a pending submission.
-fn tracks_pr(snapshot: &Snapshot, pr_number: u64) -> bool {
-    snapshot.current_item(pr_number).is_some()
-        || snapshot
-            .requests
-            .values()
-            .any(|r| matches!(r, Request::Submit { pr_number: n, .. } if *n == pr_number))
 }
 
 /// A push that arrives late (its `after`, or its `before`, is a past head)
@@ -820,10 +807,11 @@ fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
         Request::Cancel { item_id, .. } => snapshot
             .items
             .get(item_id)
-            .is_some_and(|i| !i.state.is_terminal()),
-        Request::Restart { item_id, .. } => {
-            item_in(item_id, &[ItemState::Testing, ItemState::PendingFailure])
-        }
+            .is_some_and(|i| i.state.can_cancel()),
+        Request::Restart { item_id, .. } => snapshot
+            .items
+            .get(item_id)
+            .is_some_and(|i| i.state.can_restart()),
         Request::Assembled { run_id } | Request::AssemblyFailed { run_id, .. } => {
             run_assembling(run_id)
         }
@@ -930,7 +918,7 @@ fn evict(snapshot: &mut Snapshot) {
         .keys()
         .chain(snapshot.targets.keys())
         .copied()
-        .filter(|pr| !tracks_pr(snapshot, *pr))
+        .filter(|pr| !snapshot.is_tracked(*pr))
         .collect();
 
     for pr in tracked {

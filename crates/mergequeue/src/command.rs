@@ -155,12 +155,10 @@ pub(crate) async fn run_pr_command(
             item_id,
             by_admin: false,
         },
-        ItemCommand::Restart if matches!(state, ItemState::Testing | ItemState::PendingFailure) => {
-            EventKind::ItemRestartRequested {
-                item_id,
-                by_api: false,
-            }
-        }
+        ItemCommand::Restart if state.can_restart() => EventKind::ItemRestartRequested {
+            item_id,
+            by_api: false,
+        },
         ItemCommand::Restart => {
             return refuse(format!(
                 "only a PR under test can restart. This PR is `{state}`."

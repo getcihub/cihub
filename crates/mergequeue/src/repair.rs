@@ -198,18 +198,10 @@ pub async fn sync_queue(
     let log = QueueLog::load(&mut tx, queue).await?;
     let subject = format!("sync-{}", window(now));
     let snapshot = &log.snapshot;
-    let prs: Vec<u64> = snapshot
-        .items
-        .values()
-        .filter(|i| i.is_current && !i.state.is_terminal())
-        .map(|i| i.pr_number)
-        .collect();
+    let prs: Vec<u64> = snapshot.live_items().map(|i| i.pr_number).collect();
     let mut jobs = refresh_reads(&target, &subject, JobClass::Interactive, &prs);
 
-    for run in snapshot.runs.values() {
-        if run.status != RunStatus::InProgress {
-            continue;
-        }
+    for run in snapshot.runs_in_progress() {
         let Some(test_sha) = run.test_sha.clone() else {
             continue;
         };

@@ -243,6 +243,30 @@ impl Snapshot {
             .find(|i| i.pr_number == pr_number && i.is_current && !i.state.is_terminal())
     }
 
+    /// The live items whose PR CIHub reads.
+    pub fn live_items(&self) -> impl Iterator<Item = &Item> {
+        self.items
+            .values()
+            .filter(|i| i.is_current && !i.state.is_terminal())
+    }
+
+    /// Whether the queue follows the PR: it has a live item or a pending
+    /// submission.
+    pub fn is_tracked(&self, pr_number: u64) -> bool {
+        self.current_item(pr_number).is_some()
+            || self
+                .requests
+                .values()
+                .any(|r| matches!(r, Request::Submit { pr_number: n, .. } if *n == pr_number))
+    }
+
+    /// Whether the PR is the draft PR of a run: the queue's own.
+    pub fn is_draft_pr_of_run(&self, pr_number: u64) -> bool {
+        self.runs
+            .values()
+            .any(|r| r.draft_pr_number == Some(pr_number))
+    }
+
     pub fn live_groups(&self) -> impl Iterator<Item = &TestGroup> {
         self.groups.values().filter(|g| !g.state.is_terminal())
     }
@@ -258,6 +282,19 @@ impl Snapshot {
     pub fn live_run(&self, group_id: GroupId) -> Option<&TestRun> {
         self.latest_run(group_id)
             .filter(|r| matches!(r.status, RunStatus::Assembling | RunStatus::InProgress))
+    }
+
+    /// The live run that tests the commit `test_sha`.
+    pub fn live_run_of_test_sha(&self, test_sha: &str) -> Option<&TestRun> {
+        self.runs
+            .values()
+            .find(|r| !r.status.is_terminal() && r.test_sha.as_deref() == Some(test_sha))
+    }
+
+    pub fn runs_in_progress(&self) -> impl Iterator<Item = &TestRun> {
+        self.runs
+            .values()
+            .filter(|r| r.status == RunStatus::InProgress)
     }
 
     pub fn cause(&self, subject: Subject) -> Option<EventId> {
