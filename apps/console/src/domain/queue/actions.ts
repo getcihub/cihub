@@ -1,32 +1,41 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import { type Failure, problemOf } from "@/domain/problem";
-import { readKeyOf } from "./queries";
+import {
+  getPrQueryKey,
+  getQueueQueryKey,
+  graphQueryKey,
+  listEventsQueryKey,
+  listOrgPrsQueryKey,
+  listOrgQueuesQueryKey,
+  listRepoPrsQueryKey,
+} from "@/client/@tanstack/react-query.gen";
+import type { QueuePath } from "./queries";
 
-/** What the API answered to a refused action: its problem, else that it did not answer. */
-export function refusalOf(failure: Failure): string {
-  const problem = problemOf(failure);
-  if (!problem) {
-    return "The server did not answer. Try again.";
-  }
-  return problem.detail || "The server refused the request.";
+/**
+ * Reads again what an action on the queue at `path` changes: the queue, its graph, its items, the list of the queues
+ * and the PRs of the person. A key without its query matches every read of the operation on that path. The queue
+ * decides at its next reconciliation: the stream brings what changes after.
+ */
+export async function invalidateQueue(queryClient: QueryClient, path: QueuePath): Promise<void> {
+  const { org, repo } = path;
+  const keys = [
+    getQueueQueryKey({ path }),
+    graphQueryKey({ path }),
+    listRepoPrsQueryKey({ path: { org, repo } }),
+    listOrgQueuesQueryKey({ path: { org } }),
+    listOrgPrsQueryKey({ path: { org } }),
+  ];
+
+  await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 }
 
-// The reads that an action on a queue changes.
-const READS_OF_A_QUEUE = new Set([
-  "getQueue",
-  "graph",
-  "listOrgPrs",
-  "listRepoPrs",
-  "getPr",
-  "listEvents",
-  "getRun",
-  "listOrgQueues",
-]);
+/** Reads again what an action on the PR `number` of the queue at `path` changes: the queue, the PR and its events. */
+export async function invalidatePr(queryClient: QueryClient, path: QueuePath, number: number): Promise<void> {
+  const pr = { org: path.org, repo: path.repo, number };
+  const keys = [getPrQueryKey({ path: pr }), listEventsQueryKey({ path: pr })];
 
-/** Reads again what an action on a queue changes: the queue decides at its next reconciliation. */
-export function readQueueAgain(queryClient: QueryClient): Promise<void> {
-  return queryClient.invalidateQueries({
-    predicate: (query) => READS_OF_A_QUEUE.has(readKeyOf(query.queryKey)._id ?? ""),
-  });
+  await Promise.all([
+    invalidateQueue(queryClient, path),
+    ...keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  ]);
 }

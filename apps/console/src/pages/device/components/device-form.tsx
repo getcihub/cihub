@@ -4,10 +4,11 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { approveDeviceCodeMutation, denyDeviceCodeMutation } from "@/client/@tanstack/react-query.gen";
-import { Failure, Lead, Note, Title } from "@/components/session/parts";
+import { ErrorAlert } from "@/components/errors/error-alert";
+import { Lead, Note, Title } from "@/components/session/parts";
 import { Alert } from "@cihub/ui/components/alert";
 import { Button } from "@cihub/ui/components/button";
-import { failureOf, isProblem, problemOf } from "@/domain/problem";
+import { type Failure, isProblem, refusalOf } from "@/domain/problem";
 import { userCodeOf } from "@/domain/session/device";
 import { CodeBoxes } from "./code-boxes";
 
@@ -18,12 +19,12 @@ const typedCode = z.object({
 });
 
 /** What the server answered to a code that it refused, for the person. */
-function refusalOf(thrown: unknown): string {
-  const failure = failureOf(thrown);
+function codeRefusalOf(failure: Failure): string {
   if (isProblem(failure, "device_code_not_found")) {
     return "No command line waits for this code: check it, or run cihub auth login again.";
   }
-  return problemOf(failure)?.detail ?? "The server did not answer. Try again.";
+
+  return refusalOf(failure);
 }
 
 /**
@@ -31,9 +32,10 @@ function refusalOf(thrown: unknown): string {
  * sent by someone else would approve their code with one click.
  */
 export function DeviceForm({ login }: { login: string }) {
-  const [answered, setAnswered] = useState<Answer | null>(null);
   const approve = useMutation(approveDeviceCodeMutation());
   const deny = useMutation(denyDeviceCodeMutation());
+
+  const [answered, setAnswered] = useState<Answer | null>(null);
   const form = useForm({
     defaultValues: { code: "" },
     validators: { onSubmit: typedCode },
@@ -50,6 +52,7 @@ export function DeviceForm({ login }: { login: string }) {
       setAnswered(meta.answer);
     },
   });
+
   const failed = approve.error ?? deny.error;
 
   if (answered) {
@@ -97,7 +100,7 @@ export function DeviceForm({ login }: { login: string }) {
             </div>
           )}
         </form.Field>
-        {failed && <Failure className="">{refusalOf(failed)}</Failure>}
+        {failed && <ErrorAlert>{codeRefusalOf(failed)}</ErrorAlert>}
         <Button
           type="submit"
           variant="primary"

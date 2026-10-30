@@ -92,6 +92,7 @@ function isToday(at: string, now: number): boolean {
 /** What happened to the PR, the newest first, with who did it. */
 export function History({ events }: { events: Event[] }) {
   const now = useNow();
+
   // The API gives the oldest first.
   const newestFirst = [...events].reverse();
 

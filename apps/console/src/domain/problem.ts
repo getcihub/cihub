@@ -20,3 +20,13 @@ export function problemOf(failure: Failure): Problem | null {
 export function isProblem(failure: Failure, code: ErrorCode): boolean {
   return problemOf(failure)?.code === code;
 }
+
+/** What the API answered to a refused action: its problem, else that it did not answer. */
+export function refusalOf(failure: Failure): string {
+  const problem = problemOf(failure);
+  if (!problem) {
+    return "The server did not answer. Try again.";
+  }
+
+  return problem.detail || "The server refused the request.";
+}

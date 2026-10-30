@@ -1,16 +1,17 @@
 import { useForm } from "@tanstack/react-form";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { z } from "zod";
 
 import { submitMutation } from "@/client/@tanstack/react-query.gen";
+import { MutationError } from "@/components/errors/mutation-error";
 import { PlusIcon } from "@cihub/icons/plus";
 import { Button } from "@cihub/ui/components/button";
 import { Input } from "@cihub/ui/components/input";
 import { Modal, ModalFooter } from "@cihub/ui/components/modal";
 import { Select } from "@cihub/ui/components/select";
-import { refusalOf } from "@/domain/queue/actions";
+import { invalidateQueue } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
-import { useQueueMutation } from "@/hooks/use-queue-mutation";
 
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 
@@ -34,8 +35,10 @@ export function SubmitPr({
   isDisabled: boolean;
   onSent: (notice: string) => void;
 }) {
+  const queryClient = useQueryClient();
+  const submit = useMutation({ ...submitMutation(), onSettled: () => invalidateQueue(queryClient, path) });
+
   const [isOpen, setIsOpen] = useState(false);
-  const submit = useQueueMutation(submitMutation());
   const form = useForm({
     defaultValues: EMPTY,
     validators: { onSubmit: submission },
@@ -143,11 +146,7 @@ export function SubmitPr({
                 </label>
               )}
             </form.Field>
-            {submit.isError && (
-              <p className="text-md text-destructive" role="alert">
-                {refusalOf(submit.error)}
-              </p>
-            )}
+            <MutationError error={submit.error} />
             <ModalFooter>
               <Button
                 onClick={() => {

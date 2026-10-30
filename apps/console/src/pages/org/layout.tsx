@@ -6,7 +6,7 @@ import { ErrorIcon } from "@cihub/icons/error";
 import { Alert, AlertContent, AlertDescription, AlertTitle } from "@cihub/ui/components/alert";
 import { tabTitleOf } from "@/domain/pr/words";
 import { reposOptions } from "@/domain/setup/queries";
-import { type Me, membershipOf } from "@/domain/session/session";
+import { type Me, membershipOf } from "@/domain/session/queries";
 import { useMe } from "@/hooks/use-me";
 import { useMinePrs } from "@/hooks/use-mine-prs";
 import { useOrgQueues } from "@/hooks/use-org-queues";

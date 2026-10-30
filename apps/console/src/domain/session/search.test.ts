@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pageOfThisSite } from "./session";
+import { pageOfThisSite } from "./search";
 
 describe("pageOfThisSite", () => {
   it("accepts a path of this site", () => {

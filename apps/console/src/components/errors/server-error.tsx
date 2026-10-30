@@ -6,7 +6,8 @@ import { Button } from "@cihub/ui/components/button";
 import { EmptyState } from "@cihub/ui/components/empty-state";
 import { FailureIllustration } from "@cihub/ui/components/illustrations";
 import { failureOf, isProblem, problemOf } from "@/domain/problem";
-import { forgetMe, readMe } from "@/domain/session/session";
+import { forgetMe } from "@/domain/session/actions";
+import { readMe } from "@/domain/session/queries";
 
 interface Props extends Pick<ErrorComponentProps, "error" | "reset"> {
   /** `h1` when the error is the whole page; `h3` in a page, under its head. */
@@ -28,6 +29,7 @@ export function ServerError(props: Props) {
 function FailedRead({ error, reset, heading = "h3" }: Props) {
   const router = useRouter();
   const queries = useQueryErrorResetBoundary();
+
   const problem = problemOf(failureOf(error));
   // As `503 Service Unavailable`.
   const answer = problem && `${String(problem.status)} ${problem.title}`;

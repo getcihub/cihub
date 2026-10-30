@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 
 import type { ConfigFile } from "@/client/types.gen";
-import { COMMAND } from "@/components/queue/copy-command";
+import { COMMAND } from "@/domain/queue/words";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";

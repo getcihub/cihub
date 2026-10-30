@@ -2,7 +2,7 @@
 // split: a loading file never imports a page, so that the page stays in its own chunk.
 import { getRouteApi, useMatchRoute } from "@tanstack/react-router";
 
-import { TopBar, TopBarLogo } from "@/components/frame/frame";
+import { TopBar, TopBarLogo } from "@/components/frame/top-bar";
 import { QueueSkeleton } from "@/components/queue/queue-skeleton";
 import { ReposSkeleton } from "@/components/setup/repos-skeleton";
 
@@ -15,6 +15,7 @@ const route = getRouteApi("/orgs/$org");
 export function OrgLayoutLoading() {
   const { org } = route.useParams();
   const matchRoute = useMatchRoute();
+
   // The page of a queue, or a PR over it.
   const isQueue = matchRoute({ to: "/orgs/$org/repos/$repo/queues/$queue", fuzzy: true }) !== false;
 

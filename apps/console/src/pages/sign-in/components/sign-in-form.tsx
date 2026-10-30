@@ -4,7 +4,8 @@ import { ArrowIcon } from "@cihub/icons/arrow";
 import { buttonVariants } from "@cihub/ui/components/button";
 import { Spinner } from "@cihub/ui/components/spinner";
 import { signInAddress } from "@/domain/session/session";
-import { Failure, Lead, Note, Title } from "@/components/session/parts";
+import { ErrorAlert } from "@/components/errors/error-alert";
+import { Lead, Note, Title } from "@/components/session/parts";
 
 /** The sign-in through the SCM: then CIHub opens `next`. */
 export function SignInForm({ hasFailed, next }: { hasFailed: boolean; next: string }) {
@@ -13,7 +14,7 @@ export function SignInForm({ hasFailed, next }: { hasFailed: boolean; next: stri
     <>
       <Title>Sign in</Title>
       <Lead>See and drive the merge queues of your organizations.</Lead>
-      {hasFailed && <Failure className="mb-5">The sign-in failed. Try again.</Failure>}
+      {hasFailed && <ErrorAlert className="mb-5">The sign-in failed. Try again.</ErrorAlert>}
       <a
         className={buttonVariants({ variant: "primary", size: "lg" })}
         href={signInAddress(next)}

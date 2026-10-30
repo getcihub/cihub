@@ -2,7 +2,7 @@ import { getRouteApi } from "@tanstack/react-router";
 
 import { MinePrs } from "@/components/mine/mine";
 import { OverviewHead } from "@/components/queue/overview-head";
-import { QueueCards } from "@/components/queue/queue-cards";
+import { QueueCards } from "@/pages/repo-queues/components/queue-cards";
 import { Page } from "@cihub/ui/components/page";
 import { SectionCount, SectionHead, SectionTitle } from "@cihub/ui/components/section";
 import { useMinePrs } from "@/hooks/use-mine-prs";

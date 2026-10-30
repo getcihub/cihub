@@ -1,15 +1,13 @@
-import { Link } from "@tanstack/react-router";
-import { Suspense, useRef } from "react";
+import { useRef } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
 import { ItemStateBadge } from "@/components/pr/item-state-badge";
-import { ItemRowsSkeleton } from "@/components/queue/queue-skeleton";
 import { Avatar } from "@cihub/ui/components/avatar";
-import { CardHeader, CardHint, cardVariants } from "@cihub/ui/components/card";
 import { Prose } from "@cihub/ui/components/prose";
 import { useFlip } from "@cihub/ui/hooks/use-flip";
 import { cn } from "@cihub/ui/lib/cn";
-import { type QueuePath, TABS, type Tab } from "@/domain/queue/queries";
+import type { QueuePath } from "@/domain/queue/queries";
+import { type Tab } from "@/domain/queue/search";
 import { shortSha } from "@/lib/text";
 import { durationBetween, timeAgo } from "@/lib/time";
 import { useTabItems } from "@/pages/queue/use-tab-items";
@@ -17,12 +15,6 @@ import { EmptyQueue } from "./empty-queue";
 import { PrLink } from "./pr-link";
 
 const DAY = 24 * 60 * 60 * 1000;
-
-const TAB_LABELS: Record<Tab, string> = {
-  live: "In the queue",
-  merged: "Merged",
-  ended: "Failed and cancelled",
-};
 
 const NONE: Record<Exclude<Tab, "live">, string> = {
   merged: "Nothing merged in the last 24 hours.",
@@ -75,85 +67,11 @@ function Detail({ item }: { item: Pr }) {
   );
 }
 
-/** The items of the open tab: the live ones in their order, the others of the last 24 hours. */
-export function ItemTabs({
-  path,
-  tab,
-  queue,
-  live,
-  ranks,
-  now,
-  onSent,
-}: {
-  path: QueuePath;
-  tab: Tab;
-  queue: Queue;
-  live: Pr[];
-  ranks: Map<string, number>;
-  now: number;
-  /** What the page shows once the empty queue submitted a pull request. */
-  onSent: (notice: string) => void;
-}) {
-  const counts: Record<Tab, number> = {
-    live: live.length,
-    merged: queue.merged_last_24h,
-    ended: queue.failed_or_cancelled_last_24h,
-  };
-
-  return (
-    <section className={cn(cardVariants(), "min-w-0")} aria-labelledby="items-title">
-      <CardHeader>
-        <h2 id="items-title" className="sr-only">
-          Pull requests
-        </h2>
-        <nav className="flex gap-1" aria-label="Tabs of the pull requests">
-          {TABS.map((candidate) => (
-            <Link
-              key={candidate}
-              className={cn(
-                "rounded-sm px-2.5 py-1 text-base text-secondary-foreground hover:text-foreground",
-                candidate === tab && "bg-muted text-primary",
-              )}
-              to="/orgs/$org/repos/$repo/queues/$queue"
-              params={path}
-              search={{ tab: candidate }}
-              resetScroll={false}
-              aria-current={candidate === tab ? "page" : undefined}
-            >
-              {TAB_LABELS[candidate]}
-              <span className="ml-1 text-muted-foreground">{counts[candidate]}</span>
-            </Link>
-          ))}
-        </nav>
-        <Suspense fallback={null}>
-          <TabHint path={path} tab={tab} now={now} />
-        </Suspense>
-      </CardHeader>
-      <Suspense fallback={<ItemRowsSkeleton />}>
-        <TabRows path={path} tab={tab} queue={queue} ranks={ranks} now={now} onSent={onSent} />
-      </Suspense>
-    </section>
-  );
-}
-
-/** How the open tab orders its items, and whether its read stopped at 100. */
-function TabHint({ path, tab, now }: { path: QueuePath; tab: Tab; now: number }) {
-  const { has_more: isCut } = useTabItems(path, tab, now);
-
-  return (
-    <CardHint className="max-md:hidden">
-      {tab === "live" &&
-        (isCut ? "By position, the first 100 only" : "By position: priority first, then arrival")}
-      {tab !== "live" && (isCut ? "Last 24 hours, the 100 latest submissions only" : "Last 24 hours")}
-    </CardHint>
-  );
-}
-
 /**
  * The rows of the open tab: its read is the one of the live items for the tab of the live ones. With no live item,
  * the tab says how a pull request enters the queue.
  */
-function TabRows({
+export function TabRows({
   path,
   tab,
   queue,
@@ -169,8 +87,10 @@ function TabRows({
   onSent: (notice: string) => void;
 }) {
   const items = useTabItems(path, tab, now).prs;
+
   const rowsRef = useRef<HTMLTableSectionElement>(null);
   useFlip(rowsRef);
+
   const rows = tab === "live" ? items : items.filter((item) => now - Date.parse(item.state_changed_at) < DAY);
 
   if (rows.length === 0) {

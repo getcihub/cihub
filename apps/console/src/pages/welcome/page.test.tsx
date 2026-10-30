@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Me } from "@/domain/session/session";
+import type { Me } from "@/domain/session/queries";
 import { mockSessionCookie, problem, renderApp, sentChanges } from "@/test/app";
 import { answersOfMe, answersOfMine, pageOf } from "@/test/fixtures";
 

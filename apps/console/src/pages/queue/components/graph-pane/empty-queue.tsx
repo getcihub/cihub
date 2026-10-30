@@ -1,11 +1,12 @@
 import type { Queue } from "@/client/types.gen";
-import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CopyCommand } from "@/components/queue/copy-command";
+import { COMMAND } from "@/domain/queue/words";
 import { EmptyState } from "@cihub/ui/components/empty-state";
 import { QueueIllustration } from "@cihub/ui/components/illustrations";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useRepoPermission } from "@/hooks/use-repo-permission";
 import { timeAgo } from "@/lib/time";
-import { SubmitPr } from "./submit-pr";
+import { SubmitPr } from "@/pages/queue/components/head/submit-pr";
 
 /** A queue with no pull request: when it last merged, and how a pull request enters it: a command, else a label. */
 export function EmptyQueue({
@@ -20,6 +21,7 @@ export function EmptyQueue({
   onSent: (notice: string) => void;
 }) {
   const permission = useRepoPermission(path.org, path.repo);
+
   const label = queue.settings.enqueue_label;
   const lastMerge = queue.last_merged_at
     ? `; the last merge was ${timeAgo(queue.last_merged_at, now)}`

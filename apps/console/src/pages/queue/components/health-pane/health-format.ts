@@ -1,3 +1,5 @@
+import type { HealthTotals } from "@/client/types.gen";
+
 /** `seconds` in whole minutes, as the charts count them. */
 export function minutesOf(seconds: number): number {
   return Math.round(seconds / 60);
@@ -15,4 +17,9 @@ export function durationOf(seconds: number): string {
 /** `share`, from 0 to 1, as "12%". */
 export function percentOf(share: number): string {
   return `${String(Math.round(share * 100))}%`;
+}
+
+/** The share of the PRs that merged or failed that failed. */
+export function failureRateOf({ merged, failed }: HealthTotals): number {
+  return merged + failed === 0 ? 0 : failed / (merged + failed);
 }

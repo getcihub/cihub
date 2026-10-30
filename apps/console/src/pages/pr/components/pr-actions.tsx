@@ -1,12 +1,13 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { cancelMutation, restartMutation } from "@/client/@tanstack/react-query.gen";
 import type { Pr } from "@/client/types.gen";
+import { MutationError } from "@/components/errors/mutation-error";
 import { Button } from "@cihub/ui/components/button";
 import { Modal, ModalDescription, ModalFooter } from "@cihub/ui/components/modal";
-import { refusalOf } from "@/domain/queue/actions";
+import { invalidatePr } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
-import { useQueueMutation } from "@/hooks/use-queue-mutation";
 
 // The small buttons of the head of the drawer, a size that no other page has.
 const SMALL_BUTTON = "h-6 px-2 text-md";
@@ -21,9 +22,13 @@ export function PrActions({
   item: Pr;
   onSent: (notice: string) => void;
 }) {
+  const queryClient = useQueryClient();
+  const invalidate = () => invalidatePr(queryClient, path, item.number);
+  const restart = useMutation({ ...restartMutation(), onSettled: invalidate });
+  const cancel = useMutation({ ...cancelMutation(), onSettled: invalidate });
+
   const [isCancelling, setIsCancelling] = useState(false);
-  const restart = useQueueMutation(restartMutation());
-  const cancel = useQueueMutation(cancelMutation());
+
   const target = { path: { org: path.org, repo: path.repo, number: item.number } };
   const canRestart = item.state === "testing" || item.state === "pending_failure";
   const isTested = canRestart || item.state === "tests_passed";
@@ -57,11 +62,7 @@ export function PrActions({
       >
         Cancel
       </Button>
-      {error && (
-        <p className="text-md text-destructive" role="alert">
-          {refusalOf(error)}
-        </p>
-      )}
+      <MutationError error={error} />
       {isCancelling && (
         <Modal
           title={`Take #${String(item.number)} out of the queue?`}

@@ -1,19 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useEffect } from "react";
+import { useEffect } from "react";
 
 import { syncUserMutation } from "@/client/@tanstack/react-query.gen";
 import type { OrgList } from "@/client/types.gen";
 import { ArrowIcon } from "@cihub/icons/arrow";
 import { Avatar } from "@cihub/ui/components/avatar";
 import { Button, buttonVariants } from "@cihub/ui/components/button";
-import { cn } from "@cihub/ui/lib/cn";
-import { COMMAND } from "@/components/queue/copy-command";
-import { Brand, Failure, Note } from "@/components/session/parts";
-import { readsOfMe } from "@/domain/session/session";
+import { COMMAND } from "@/domain/queue/words";
+import { ErrorAlert } from "@/components/errors/error-alert";
+import { Brand, Note } from "@/components/session/parts";
+import { invalidateUserOrgs } from "@/domain/session/actions";
+import { userOrgsOptions } from "@/domain/session/queries";
 import { useMe } from "@/hooks/use-me";
 import { useReadAgain } from "@/hooks/use-read-again";
 import { useSignOut } from "@/hooks/use-sign-out";
+import { Step } from "./components/step";
 
 /**
  * The sign-out page of the GitHub of the App, next to its installation page: GitHub asks which account to use
@@ -28,18 +30,19 @@ function signOutOf(installUrl: string | null | undefined): string | null {
  * there. "Check again" reads the installations of the person on GitHub, then opens the first organization.
  */
 export function WelcomePage() {
-  const me = useMe();
   const navigate = useNavigate();
-  const { startSignOut, hasSignOutFailed } = useSignOut();
+
+  const me = useMe();
   const queryClient = useQueryClient();
-  const read = readsOfMe()[1];
   const wait = useReadAgain((data: OrgList | undefined) => !data?.orgs.length, false);
-  const orgs = useQuery({ ...read, refetchInterval: wait.refetchInterval });
+  const orgs = useQuery({ ...userOrgsOptions(), refetchInterval: wait.refetchInterval });
   const sync = useMutation({
     ...syncUserMutation(),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: read.queryKey }),
+    onSettled: () => invalidateUserOrgs(queryClient),
     onSuccess: wait.restart,
   });
+  const { startSignOut, hasSignOutFailed } = useSignOut();
+
   const first = orgs.data?.orgs[0];
   const isChecking = wait.hasStarted && !wait.isOver && !first;
   const signOutUrl = signOutOf(me.app_install_url);
@@ -68,7 +71,7 @@ export function WelcomePage() {
           </p>
         </div>
         {hasSignOutFailed && (
-          <Failure className="mb-0">The sign-out failed. Reload the page, then try again.</Failure>
+          <ErrorAlert className="mb-0">The sign-out failed. Reload the page, then try again.</ErrorAlert>
         )}
         <ol className="flex flex-col gap-3">
           <Step n={1} title="Install the App on an organization" isNow>
@@ -98,7 +101,7 @@ export function WelcomePage() {
               </Button>
             </Note>
             {sync.isError && (
-              <Failure className="mt-2 mb-0">The check failed. Try again in a moment.</Failure>
+              <ErrorAlert className="mt-2 mb-0">The check failed. Try again in a moment.</ErrorAlert>
             )}
             {wait.isOver && !first && (
               <Note>No organization with the App yet: install it, or ask an owner to.</Note>
@@ -120,39 +123,5 @@ export function WelcomePage() {
         </ol>
       </main>
     </div>
-  );
-}
-
-function Step({
-  n,
-  title,
-  isNow = false,
-  children,
-}: {
-  n: number;
-  title: string;
-  isNow?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <li
-      className={cn(
-        "flex gap-3 rounded-md border px-4.5 py-4 text-md",
-        isNow ? "border-primary bg-card" : "border-border text-muted-foreground",
-      )}
-    >
-      <span
-        className={cn(
-          "grid size-6 flex-none place-items-center rounded-full text-sm font-medium",
-          isNow ? "bg-primary text-primary-foreground" : "border border-border",
-        )}
-      >
-        {n}
-      </span>
-      <div className="flex flex-col gap-1">
-        <b className={cn("font-medium", isNow && "text-foreground")}>{title}</b>
-        {children}
-      </div>
-    </li>
   );
 }

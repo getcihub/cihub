@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { GraphIcon } from "@cihub/icons/graph";
 import { PulseIcon } from "@cihub/icons/pulse";
 import { cn } from "@cihub/ui/lib/cn";
-import { PANES, type Pane, type QueuePath } from "@/domain/queue/queries";
+import type { QueuePath } from "@/domain/queue/queries";
+import { PANES, type Pane } from "@/domain/queue/search";
 
 const PANE_LABELS: Record<Pane, { label: string; icon: ReactNode }> = {
   graph: { label: "Graph", icon: <GraphIcon /> },

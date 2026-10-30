@@ -1,22 +1,23 @@
 import { Outlet, getRouteApi } from "@tanstack/react-router";
 import { Suspense } from "react";
 
-import { Spotlight } from "@/components/mine/mine";
 import { Card } from "@cihub/ui/components/card";
 import { Page } from "@cihub/ui/components/page";
+import { periodOfSearch } from "@/domain/queue/period";
 import { ranksOf } from "@/domain/queue/queries";
 import { useMinePrs } from "@/hooks/use-mine-prs";
-import { periodOfSearch } from "@/domain/queue/period";
 import { useNow } from "@/hooks/use-now";
 import { useSentNotice } from "@/hooks/use-sent-notice";
-import { Banners } from "@/pages/queue/components/banners";
-import { EmptyQueue } from "@/pages/queue/components/empty-queue";
-import { HealthPane, HealthSkeleton } from "@/pages/queue/components/health-pane";
-import { ItemTabs } from "@/pages/queue/components/item-tabs";
-import { QueueGraph } from "@/pages/queue/components/queue-graph";
-import { QueueHead } from "@/pages/queue/components/queue-head";
-import { QueuePanes } from "@/pages/queue/components/queue-panes";
-import { Settings, Stats } from "@/pages/queue/components/summary";
+import { EmptyQueue } from "@/pages/queue/components/graph-pane/empty-queue";
+import { ItemTabs } from "@/pages/queue/components/graph-pane/item-tabs";
+import { QueueGraph } from "@/pages/queue/components/graph-pane/queue-graph";
+import { Spotlight } from "@/pages/queue/components/graph-pane/spotlight";
+import { Settings, Stats } from "@/pages/queue/components/graph-pane/summary";
+import { Banners } from "@/pages/queue/components/head/banners";
+import { QueueHead } from "@/pages/queue/components/head/queue-head";
+import { QueuePanes } from "@/pages/queue/components/head/queue-panes";
+import { HealthPane } from "@/pages/queue/components/health-pane/health-pane";
+import { HealthSkeleton } from "@/pages/queue/components/health-pane/health-skeleton";
 import { useQueuePageData } from "./use-queue-page-data";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/queues/$queue");
@@ -30,9 +31,11 @@ export function QueuePage() {
   const { tab, pane, ...search } = route.useSearch();
   const path = { org, repo, queue: name };
   const now = useNow();
+
   const { queue, graph, live } = useQueuePageData(path, now);
-  const sent = useSentNotice(queue.id);
   const spotlit = useMinePrs(org).filter((pr) => pr.repo === repo && pr.queue === name);
+  const sent = useSentNotice(queue.id);
+
   const ranks = ranksOf(graph);
   // A tab that the address opens shows its items, even in a queue with nothing live.
   const isQuiet =

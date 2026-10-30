@@ -1,6 +1,7 @@
+import { noop } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
-import { prReads } from "@/domain/pr/queries";
+import { prEventsOptions, prOptions, runOptions } from "@/domain/pr/queries";
 import { failureOf, isProblem } from "@/domain/problem";
 import { PrDrawerError } from "./error";
 import { PrDrawerLoading } from "./loading";
@@ -20,14 +21,24 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue/prs/$
     },
     stringify: ({ number }) => ({ number: String(number) }),
   },
-  // A PR that the queue never had answers 404: the drawer says so. Another failure shows in the drawer.
   loader: async ({ context: { queryClient }, params: { org, repo, queue, number } }) => {
-    const [pr, events] = prReads({ org, repo, queue }, number);
-    const [readPr] = await Promise.allSettled([queryClient.query(pr), queryClient.query(events)]);
+    const path = { org, repo, queue };
 
+    // The drawer shows the PR and its history together; a failure other than a 404 shows in the drawer.
+    const [readPr] = await Promise.allSettled([
+      queryClient.query(prOptions(path, number)),
+      queryClient.query(prEventsOptions(path, number)),
+    ]);
+
+    // A PR that the queue never had answers 404: the drawer says so.
     if (readPr.status === "rejected" && isProblem(failureOf(readPr.reason), "pr_not_found")) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router stops on a thrown notFound
       throw notFound();
+    }
+
+    // The run loads under its own section, as soon as the PR names it.
+    if (readPr.status === "fulfilled" && readPr.value.run_id) {
+      void queryClient.query(runOptions(path, readPr.value.run_id)).catch(noop);
     }
   },
   component: PrDrawer,

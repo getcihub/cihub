@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { ServerErrorPage } from "@/components/errors/server-error-page";
 import { PendingPage } from "@/components/frame/pending-page";
-import { membershipOf, readMe } from "@/domain/session/session";
+import { membershipOf, readMe } from "@/domain/session/queries";
 import { lastOrgSlug } from "@/lib/preferences";
 
 /** The queues of the organization that the person opened last, else of their first one; without one, the welcome. */

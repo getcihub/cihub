@@ -1,13 +1,10 @@
-import { getRouteApi } from "@tanstack/react-router";
-
 import { Brand } from "@/components/session/parts";
+import { useMe } from "@/hooks/use-me";
 import { DeviceForm } from "@/pages/device/components/device-form";
-
-const route = getRouteApi("/device");
 
 /** The page where a person approves the code that their command line shows. */
 export function DevicePage() {
-  const { me } = route.useLoaderData();
+  const me = useMe();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-card px-8 py-12">

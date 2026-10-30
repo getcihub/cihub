@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type { Pr } from "@/client/types.gen";
-import { minePrsOf, minePrsReads } from "@/domain/mine/queries";
+import { mineLiveOptions, mineMergedOptions, minePrsOf } from "@/domain/mine/queries";
 import { useMe } from "@/hooks/use-me";
 
 /**
@@ -9,8 +9,9 @@ import { useMe } from "@/hooks/use-me";
  * They only add to a page: their read never stops it, unlike the reads that the page needs.
  */
 export function useMinePrs(org: string): Pr[] {
-  const reads = minePrsReads(org, useMe().login);
-  const live = useQuery(reads.live).data?.prs;
-  const merged = useQuery(reads.merged).data?.prs;
+  const { login } = useMe();
+  const live = useQuery(mineLiveOptions(org, login)).data?.prs;
+  const merged = useQuery(mineMergedOptions(org, login)).data?.prs;
+
   return minePrsOf(live, merged);
 }

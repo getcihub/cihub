@@ -28,11 +28,13 @@ let openFrames = 0;
  */
 export function DrawerFrame({ path, title, meta, head, children }: Props) {
   const navigate = useNavigate();
+  const isCalm = useReducedMotion() ?? false;
+
   const drawer = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const isCalm = useReducedMotion() ?? false;
   const [isEntering] = useState(() => openFrames === 0);
   const [isClosing, setIsClosing] = useState(false);
+
   const leave = () => {
     void navigate({ to: "/orgs/$org/repos/$repo/queues/$queue", params: path, search: (kept) => kept });
   };
@@ -44,6 +46,7 @@ export function DrawerFrame({ path, title, meta, head, children }: Props) {
     }
     setIsClosing(true);
   };
+
   useDialog(drawer, close, { first: heading });
 
   useLayoutEffect(() => {

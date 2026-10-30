@@ -10,22 +10,24 @@ import { needsAttention } from "@/domain/queue/attention";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { useNow } from "@/hooks/use-now";
 import { timeAgo } from "@/lib/time";
-import { QueueStateBadge } from "./queue-state-badge";
+import { QueueStateBadge } from "@/components/queue/queue-state-badge";
 
 /** From this many queues, a filter helps to find one. */
 const FILTER_FROM = 8;
 
 /** The cards of `queues`, the ones that need someone first, then in the order of the API. */
 export function QueueCards({ org, queues }: { org: string; queues: Queue[] }) {
+  const now = useNow();
+
   const [filter, setFilter] = useState("");
+  const grid = useRef<HTMLDivElement>(null);
+  useFlip(grid);
+
   const hasFilter = queues.length >= FILTER_FROM;
   const words = hasFilter ? filter.trim().toLowerCase() : "";
   const shown = queues
     .filter((queue) => `${queue.repo} ${queue.target_branch}`.toLowerCase().includes(words))
     .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)));
-  const now = useNow();
-  const grid = useRef<HTMLDivElement>(null);
-  useFlip(grid);
 
   return (
     <>

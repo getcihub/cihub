@@ -5,7 +5,7 @@ import { ServerErrorPage } from "@/components/errors/server-error-page";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useOrgQueues } from "@/hooks/use-org-queues";
 import { useSentNotice } from "@/hooks/use-sent-notice";
-import { QueueHead } from "@/pages/queue/components/queue-head";
+import { QueueHead } from "@/pages/queue/components/head/queue-head";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/queues/$queue");
 

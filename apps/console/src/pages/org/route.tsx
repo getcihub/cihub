@@ -1,10 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { minePrsReads } from "@/domain/mine/queries";
+import { mineLiveOptions, mineMergedOptions } from "@/domain/mine/queries";
 import { failureOf, isProblem } from "@/domain/problem";
 import { orgQueuesOptions } from "@/domain/queue/queries";
-import { forgetMe, readMe } from "@/domain/session/session";
+import { forgetMe } from "@/domain/session/actions";
+import { readMe } from "@/domain/session/queries";
 import { OrgLayoutError } from "./error";
 import { OrgLayout } from "./layout";
 import { OrgLayoutLoading } from "./loading";
@@ -41,8 +42,10 @@ export const Route = createFileRoute("/orgs/$org")({
 
     if (access === "granted") {
       // The PRs of the person give the title of the tab on every page of the organization.
-      const mine = minePrsReads(params.org, me.login);
-      await Promise.allSettled([queryClient.query(mine.live), queryClient.query(mine.merged)]);
+      await Promise.allSettled([
+        queryClient.query(mineLiveOptions(params.org, me.login)),
+        queryClient.query(mineMergedOptions(params.org, me.login)),
+      ]);
     }
 
     return { hasAccess: access === "granted" };

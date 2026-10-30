@@ -8,7 +8,7 @@ import {
   startOfMonth,
   utcText,
 } from "@cihub/utils/utc-days";
-import type { Range } from "./queries";
+import type { Range } from "./search";
 
 /** The history that a period of the Health can start in, as the server checks it: 13 months. */
 export const KEPT_DAYS = 395;

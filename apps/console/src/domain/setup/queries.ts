@@ -1,8 +1,5 @@
-import type { QueryClient } from "@tanstack/react-query";
-
 import { getRepoOptions, listReposOptions } from "@/client/@tanstack/react-query.gen";
 import type { RepoList, SetupState, SetupSummary } from "@/client/types.gen";
-import { readKeyOf } from "@/domain/queue/queries";
 
 /** An organization has a few hundred repositories at most: one page of the most that a page holds. */
 const REPOS_PER_PAGE = 100;
@@ -33,14 +30,4 @@ export function isListWaiting(list: RepoList | undefined, isConnecting: boolean)
     return true;
   }
   return (isConnecting && list.repos.length === 0) || list.repos.some((repo) => !isSetupRead(repo.setup));
-}
-
-/** Reads again the lists of the repositories of `org`: a setup in them changed. */
-export function readReposAgain(queryClient: QueryClient, org: string): Promise<void> {
-  return queryClient.invalidateQueries({
-    predicate: (query) => {
-      const key = readKeyOf(query.queryKey);
-      return key._id === "listRepos" && key.path?.org === org;
-    },
-  });
 }

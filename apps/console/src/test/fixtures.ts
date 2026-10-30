@@ -9,7 +9,7 @@ import type {
   SetupState,
 } from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
-import type { Me } from "@/domain/session/session";
+import type { Me } from "@/domain/session/queries";
 import { type Answer, type Answers, problem } from "./app";
 
 export const ada: Me = {

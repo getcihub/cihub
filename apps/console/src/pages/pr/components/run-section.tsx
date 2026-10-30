@@ -1,13 +1,14 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { getRunOptions } from "@/client/@tanstack/react-query.gen";
 import type { CheckConclusion, CheckStatus, RunCheck } from "@/client/types.gen";
 import { Skeleton } from "@cihub/ui/components/skeleton";
 import { cn } from "@cihub/ui/lib/cn";
 import { shortSha } from "@/lib/text";
 import { dateAndTime, durationBetween, timeOfDay } from "@/lib/time";
 import { DrawerNote, DrawerSection, DrawerSectionTitle } from "./drawer-frame";
+import { runOptions } from "@/domain/pr/queries";
+import type { QueuePath } from "@/domain/queue/queries";
 
 const RUN_STATUSES: Record<string, string> = {
   assembling: "Assembling",
@@ -111,8 +112,9 @@ function checkState({ status, conclusion, started_at, completed_at }: RunCheck):
 }
 
 /** The run of a PR in its drawer: what it tests, on top of what, and the checks of its test commit. */
-export function RunSection({ org, repo, runId }: { org: string; repo: string; runId: string }) {
-  const { data: run } = useSuspenseQuery(getRunOptions({ path: { org, repo, run_id: runId } }));
+export function RunSection({ path, runId }: { path: QueuePath; runId: string }) {
+  const { data: run } = useSuspenseQuery(runOptions(path, runId));
+
   const prs = (numbers: number[]) => numbers.map((number) => `#${String(number)}`).join(", ");
 
   return (

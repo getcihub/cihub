@@ -1,5 +1,5 @@
 import { OverviewHead } from "@/components/queue/overview-head";
-import { QueueCardsSkeleton } from "@/components/queue/queue-cards-skeleton";
+import { QueueCardsSkeleton } from "@/pages/repo-queues/components/queue-cards-skeleton";
 import { Page } from "@cihub/ui/components/page";
 
 /** A list of queues while it loads: the head of the page, then the shapes of the cards. */

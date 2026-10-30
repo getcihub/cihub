@@ -2,7 +2,8 @@ import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-q
 
 import { syncRepoMutation } from "@/client/@tanstack/react-query.gen";
 import type { RepoDetail } from "@/client/types.gen";
-import { isSetupRead, readReposAgain, repoOptions } from "@/domain/setup/queries";
+import { invalidateRepo } from "@/domain/setup/actions";
+import { isSetupRead, repoOptions } from "@/domain/setup/queries";
 import { useReadAgain } from "./use-read-again";
 
 export interface RepoSetupRead {
@@ -22,20 +23,19 @@ export interface RepoSetupRead {
 export function useRepoSetup(org: string, name: string, onSync?: () => void): RepoSetupRead {
   const queryClient = useQueryClient();
   const wait = useReadAgain((data: RepoDetail | undefined) => !data || !isSetupRead(data.setup));
-  const read = repoOptions(org, name);
-  const { data: repo } = useSuspenseQuery({ ...read, refetchInterval: wait.refetchInterval });
+  const { data: repo } = useSuspenseQuery({
+    ...repoOptions(org, name),
+    refetchInterval: wait.refetchInterval,
+  });
   const sync = useMutation({
     ...syncRepoMutation(),
-    onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: read.queryKey }),
-        readReposAgain(queryClient, org),
-      ]),
+    onSettled: () => invalidateRepo(queryClient, org, name),
     onSuccess: () => {
       wait.restart();
       onSync?.();
     },
   });
+
   const isChecking = !isSetupRead(repo.setup);
 
   return {

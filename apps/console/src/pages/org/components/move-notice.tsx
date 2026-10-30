@@ -1,12 +1,13 @@
 import { hashKey, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
 import { Button } from "@cihub/ui/components/button";
 import { Toast } from "@cihub/ui/components/toast";
-import { minePrsOf, minePrsReads } from "@/domain/mine/queries";
+import { mineLiveOptions, mineMergedOptions, minePrsOf } from "@/domain/mine/queries";
 import { whereAmong } from "@/domain/pr/words";
 import { useMe } from "@/hooks/use-me";
+import { useTimedValue } from "@/hooks/use-timed-value";
 
 const SHOWN_MS = 8_000;
 
@@ -34,16 +35,15 @@ function placesOf(prs: Pr[], queues: Queue[]): Map<string, PrPlace> {
 export function MoveNotice({ org, queues }: { org: string; queues: Queue[] }) {
   const queryClient = useQueryClient();
   const { login } = useMe();
-  const [notice, setNotice] = useState<string | null>(null);
+
+  const [notice, setNotice] = useTimedValue<string>(SHOWN_MS);
 
   useEffect(() => {
-    const reads = minePrsReads(org, login);
-    const hashes = [hashKey(reads.live.queryKey), hashKey(reads.merged.queryKey)];
+    const live = mineLiveOptions(org, login);
+    const merged = mineMergedOptions(org, login);
+    const hashes = [hashKey(live.queryKey), hashKey(merged.queryKey)];
     const mine = () =>
-      minePrsOf(
-        queryClient.getQueryData(reads.live.queryKey)?.prs,
-        queryClient.getQueryData(reads.merged.queryKey)?.prs,
-      );
+      minePrsOf(queryClient.getQueryData(live.queryKey)?.prs, queryClient.getQueryData(merged.queryKey)?.prs);
     let lastPlaces = placesOf(mine(), queues);
 
     return queryClient.getQueryCache().subscribe((event) => {
@@ -60,19 +60,7 @@ export function MoveNotice({ org, queues }: { org: string; queues: Queue[] }) {
         setNotice(moved.map((place) => `${place.title}: ${place.where}`).join(" · "));
       }
     });
-  }, [org, login, queues, queryClient]);
-
-  useEffect(() => {
-    if (!notice) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      setNotice(null);
-    }, SHOWN_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [notice]);
+  }, [org, login, queues, queryClient, setNotice]);
 
   return (
     <Toast>

@@ -1,18 +1,13 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { z } from "zod";
 
 import { ServerErrorPage } from "@/components/errors/server-error-page";
 import { PendingPage } from "@/components/frame/pending-page";
-import { pageOfThisSite, readMe } from "@/domain/session/session";
+import { readMe } from "@/domain/session/queries";
+import { signInSearch } from "@/domain/session/search";
 import { SignInPage } from "./page";
 
-const search = z.object({
-  error: z.literal("failed").optional().catch(undefined),
-  next: pageOfThisSite.optional().catch(undefined),
-});
-
 export const Route = createFileRoute("/sign-in")({
-  validateSearch: search,
+  validateSearch: signInSearch,
   loaderDeps: ({ search: { next } }) => ({ next }),
   loader: async ({ context, deps }) => {
     const me = await readMe(context.queryClient);

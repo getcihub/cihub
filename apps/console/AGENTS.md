@@ -35,13 +35,26 @@ does not also check.
 (`no-restricted-imports`) refuses the others, and a relative import that leaves its folder: another folder is
 imported through `@/` (`@/domain/queue/queries`).
 
-| Folder        | What it holds                                                                                                  | It imports                                                            |
-| ------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `pages/`      | one folder per page (see "Pages"): its route, its states, and the components and hooks that only it uses       | its own folder, `components/`, `hooks/`, `domain/`, `lib/`, `client/` |
-| `components/` | the components that two pages or more share, by subject (`frame/`, `queue/`, `pr/`, `mine/`, `errors/`)        | another component, `hooks/`, `domain/`, `lib/`, `client/`             |
-| `hooks/`      | the hooks (`use-*.ts`) that two pages or more share: the reads of the API, the session, the time               | `domain/`, `lib/`, `client/`                                          |
-| `domain/`     | one folder per resource of the API (`queue/`, `pr/`, `session/`, `mine/`): its reads, actions, words; no React | `lib/`, `client/`, another `domain/` folder                           |
-| `lib/`        | the functions that know nothing of CIHub: the query client, the times, the plurals                             | nothing of `src/`                                                     |
+| Folder        | What it holds                                                                                                                                          | It imports                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `pages/`      | one folder per page (see "Pages"): its route, its states, and the components and hooks that only it uses                                               | its own folder, `components/`, `hooks/`, `domain/`, `lib/`, `client/` |
+| `components/` | the components that two pages or more share, by subject (`queue/`, `pr/`, `mine/`, `errors/`), and `frame/`, the frame of the pages of an organization | another component, `hooks/`, `domain/`, `lib/`, `client/`             |
+| `hooks/`      | the hooks (`use-*.ts`) that two pages or more share: the reads of the API, the session, the time                                                       | `domain/`, `lib/`, `client/`                                          |
+| `domain/`     | one folder per resource of the API (`queue/`, `pr/`, `session/`, `mine/`), see below; no React                                                         | `lib/`, `client/`, another `domain/` folder                           |
+| `lib/`        | the functions that know nothing of CIHub: the query client, the times, the plurals                                                                     | nothing of `src/`                                                     |
+
+A folder of `domain/` splits its resource by role, each file when the resource has it:
+
+| File         | What it holds                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| `queries.ts` | one function per read, `<thing>Options(...)`, over the generated `queryOptions`; never a tuple of reads |
+| `actions.ts` | `invalidate<Thing>(queryClient, ...)`: the reads that an action changes, by the generated `*QueryKey`   |
+| `search.ts`  | the Zod schema of the search of a page, its defaults, and the values of its tabs (`TABS`, `PANES`)      |
+| `words.ts`   | the words and the constants that the pages show (`COMMAND`)                                             |
+
+Two files sit at the root of `domain/`: `problem.ts`, the failures of the API and the words of a refusal
+(`failureOf`, `isProblem`, `refusalOf`), and `read-key.ts`, the fields of a query key for a predicate that a
+`*QueryKey` cannot say ("every read of an organization", `live.ts`), whose `Operation` is typed by the generated SDK.
 
 `client/` is generated, `styles/` holds the design system, `test/` the helpers of the tests. A component or a page
 and its test sit side by side. A component or a hook that only one page uses sits in the folder of that page; it
@@ -63,11 +76,16 @@ A page is a folder of `src/pages/`, named after the page (`queue/`, `org-queues/
 | `loading.tsx`   | `pendingComponent`, the skeleton of the page                                                                  |
 | `error.tsx`     | `errorComponent`, what the page keeps when a read fails                                                       |
 | `not-found.tsx` | `notFoundComponent`, when the page has its own                                                                |
-| `components/`   | the components that only this page uses                                                                       |
+| `components/`   | the components that only this page uses; one folder per zone of the page once it holds about ten files        |
 | `use-*.ts`      | the hooks that only this page uses                                                                            |
 
 A state that the page shares with others comes from `components/` (`NotFoundPage`, `ServerErrorPage`,
 `QueueSkeleton`), and the page has no file for it. `src/pages/redirects/` holds the routes that only redirect.
+
+A zone is a part of the page that a person sees as one (`queue/components/head/`, `graph-pane/`, `health-pane/`):
+a component sits in the zone that shows it, and a zone imports another one through `@/pages/<page>/components/`.
+A component file holds one component and the small parts that only it uses; a part that another file needs, or a
+file over about 200 lines, becomes a file of its own.
 
 ## Routes
 
@@ -83,18 +101,21 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   parameter goes through `validateSearch` with a Zod schema.
 - A link is a typed `<Link to=…>` or `navigate({ to })`; never a path built from strings.
 - The router context carries the `QueryClient`. The layout of the signed-in pages (`src/pages/org/route.tsx`) reads
-  the person of the session (`/user`, `/user/orgs` and `/instance`, the `Me` of `src/domain/session/session.ts`) in
+  the person of the session (`/user`, `/user/orgs` and `/instance`, the `Me` of `src/domain/session/queries.ts`) in
   its loader, and redirects to the sign-in page on `401`.
 
 ## Data of the server
 
-- Every read goes through TanStack Query with the generated `queryOptions`; never a `fetch` by hand, never a copy
-  of the data of the server in `useState`, a context or a store.
-- A route loader starts its reads with `queryClient.query(...)` (`ensureQueryData` is deprecated) and awaits the
-  ones that the whole page shows; the component reads them with `useSuspenseQuery`. No request waterfall: a loader
-  starts the independent reads together. A read of a part of the page that changes without changing the page (the
-  items of a tab) starts in the loader without being awaited, and the part waits for it in a `<Suspense>` of its
-  own.
+- Every read goes through TanStack Query with the generated `queryOptions`, through the function of
+  `domain/<resource>/queries.ts`; a page, a component or a hook never calls a generated `*Options` itself, so that a
+  read changes in one place. Never a `fetch` by hand, never a copy of the data of the server in `useState`, a
+  context or a store.
+- A route loader starts its reads with `queryClient.query(...)` (`ensureQueryData` is deprecated), in three steps
+  (`src/pages/queue/route.tsx`): it decides `notFound()` or `redirect()` on the `code` of a `Problem`; it starts,
+  without awaiting them, the reads of a part that waits in a `<Suspense>` of its own (the items of a tab); then it
+  awaits the reads that the whole page shows together, with `Promise.allSettled`. The component reads them with
+  `useSuspenseQuery`, which throws a failed read to `error.tsx`. No request waterfall: a loader starts the
+  independent reads together.
 - A link starts the reads of its page when the pointer rests on it (`defaultPreload: "intent"`); TanStack Query
   says what is still fresh (`defaultPreloadStaleTime: 0`).
 - The stream `/orgs/{org}/stream` (`src/domain/queue/live.ts`, followed by `src/pages/org/use-queue-news.ts`) invalidates the query keys of the queue that
@@ -103,7 +124,11 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   reads them again every 30 seconds while it is open, and not at each change; and a page that waits for a read of
   the SCM (a setup that the server reads, the installations after "Check again"): it reads again every 2 seconds,
   for 60 seconds at most (`readAgainWhile` of `src/domain/setup/read-again.ts`).
-- A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
+- A mutation is `useMutation({ ...<operation>Mutation(), onSettled: () => invalidate<Thing>(queryClient, ...) })`:
+  the generated options, and the reads that it changes from `domain/<resource>/actions.ts`, which names them by
+  the generated `*QueryKey` with only their path, so that a key matches every query of the read, and a renamed
+  operation fails the type check. Its refusal shows with `MutationError` (`components/errors/mutation-error.tsx`),
+  in the words of `refusalOf` (`domain/problem.ts`). No optimistic update of the queue: the API
   answers `202` and the queue decides at its next reconciliation; the page shows the request as sent until the
   stream signals the change.
 - An error is the `Problem` of the API: the page decides on its `code`, never on `detail` or on the status alone.
@@ -119,11 +144,29 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   sign-in and back to the page, once a new read of the person says that the session ended; else it shows as a
   failure, so that the sign-in never loops.
 - An action that runs says so in its button: a spinner and what runs ("Submitting"), with `isPending` and
-  `pendingText` of `Button`.
+  `pendingText` of `Button`. A refusal of the server shows next to it with `MutationError`; a failure that the page
+  words itself ("The check failed") shows with `ErrorAlert` (`components/errors/error-alert.tsx`).
 - The skeleton of a page sits in its `loading.tsx`, which never imports `page.tsx`, `layout.tsx` or `error.tsx`:
   `autoCodeSplitting` keeps a `pendingComponent` in the entry chunk, and a skeleton imported from the file of its
   page would bring the whole page into it.
 - `mise run console:shots` captures these states too: a view whose read never answers shows the skeleton.
+- What an action did shows for a few seconds with `useTimedValue` (`hooks/use-timed-value.ts`), never with an
+  effect and a timer of its own.
+
+## Reading order of the code
+
+The code is read by a person first: the lines that do one thing sit together, as one block, and one blank line
+separates two blocks. A component or a hook keeps this order, each block only when it has it:
+
+1. what the route gives: `getRouteApi(...).useParams()`, `useSearch()`, and the values built from them (`path`);
+2. the reads and the actions of the server: `useSuspenseQuery`, `useMutation`, the hooks that read;
+3. the local state: `useState`, `useTimedValue`;
+4. the values derived from the blocks above, and the state that they set during the render;
+5. the effects, if any;
+6. the render, after one blank line.
+
+A guard clause is followed by one blank line. A block that grows past what the eye takes in at once moves to a
+hook of the page (`use-*.ts`) or to a function of `domain/`. A loader follows its three steps in the same way.
 
 ## Animations
 

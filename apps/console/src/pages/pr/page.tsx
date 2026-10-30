@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { ItemStateBadge } from "@/components/pr/item-state-badge";
 import { Alert } from "@cihub/ui/components/alert";
 import { Prose } from "@cihub/ui/components/prose";
-import { prReads } from "@/domain/pr/queries";
+import { prEventsOptions, prOptions } from "@/domain/pr/queries";
 import { isEnded } from "@/domain/pr/words";
 import { useSentNotice } from "@/hooks/use-sent-notice";
 import { plural } from "@/lib/text";
@@ -29,10 +29,14 @@ const route = getRouteApi("/orgs/$org/repos/$repo/queues/$queue/prs/$number");
 export function PrDrawer() {
   const { org, repo, queue, number } = route.useParams();
   const path = { org, repo, queue };
+
+  const [{ data: item }, { data: events }] = useSuspenseQueries({
+    queries: [prOptions(path, number), prEventsOptions(path, number)],
+  });
   const permission = useRepoPermission(org, repo);
-  const [{ data: item }, { data: events }] = useSuspenseQueries({ queries: prReads(path, number) });
-  const ahead = item.ahead.length;
   const { notice, showNotice } = useSentNotice(item.queue_id);
+
+  const ahead = item.ahead.length;
   const hasEnded = isEnded(item.state);
 
   return (
@@ -102,7 +106,7 @@ export function PrDrawer() {
       )}
       {item.run_id && (
         <Suspense fallback={<RunSectionSkeleton />}>
-          <RunSection org={org} repo={repo} runId={item.run_id} />
+          <RunSection path={path} runId={item.run_id} />
         </Suspense>
       )}
       <History events={events.events} />

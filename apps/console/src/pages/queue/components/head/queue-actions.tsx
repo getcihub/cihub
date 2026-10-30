@@ -1,7 +1,9 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 
 import { updateQueueMutation } from "@/client/@tanstack/react-query.gen";
 import type { Queue, RequestedQueueState } from "@/client/types.gen";
+import { MutationError } from "@/components/errors/mutation-error";
 import { CheckIcon } from "@cihub/icons/check";
 import { DrainIcon } from "@cihub/icons/drain";
 import { PauseIcon } from "@cihub/icons/pause";
@@ -10,9 +12,9 @@ import { Button } from "@cihub/ui/components/button";
 import { Modal, ModalDescription, ModalFooter } from "@cihub/ui/components/modal";
 import { Spinner } from "@cihub/ui/components/spinner";
 import { Toast } from "@cihub/ui/components/toast";
-import { refusalOf } from "@/domain/queue/actions";
+import { invalidateQueue } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
-import { useQueueMutation } from "@/hooks/use-queue-mutation";
+import { useTimedValue } from "@/hooks/use-timed-value";
 
 interface StateRequest {
   /** The button, and the confirmation in the modal: "Pause". */
@@ -58,10 +60,16 @@ const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
 
 /** Pause, drain or resume the queue: an admin only, as the server checks. */
 export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue: Queue; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const update = useMutation({
+    ...updateQueueMutation(),
+    onSettled: () => invalidateQueue(queryClient, path),
+  });
+
   const [asked, setAsked] = useState<RequestedQueueState | null>(null);
   const [sent, setSent] = useState<RequestedQueueState | null>(null);
-  const [done, setDone] = useState<RequestedQueueState | null>(null);
-  const update = useQueueMutation(updateQueueMutation());
+  const [done, setDone] = useTimedValue<RequestedQueueState>(DONE_SHOWN_MS);
+
   const choices: RequestedQueueState[] = queue.state === "running" ? ["paused", "draining"] : ["running"];
   const isLost = queue.is_suspended;
   const request = asked && STATE_REQUESTS[asked];
@@ -71,20 +79,6 @@ export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue:
     setSent(null);
     setDone(sent);
   }
-
-  useEffect(() => {
-    if (!done) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setDone(null);
-    }, DONE_SHOWN_MS);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [done]);
 
   return (
     <>
@@ -110,11 +104,7 @@ export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue:
           }}
         >
           <ModalDescription>{request.consequence}</ModalDescription>
-          {update.isError && (
-            <p className="text-md text-destructive" role="alert">
-              {refusalOf(update.error)}
-            </p>
-          )}
+          <MutationError error={update.error} />
           <ModalFooter>
             <Button
               onClick={() => {

@@ -1,32 +1,15 @@
-import { useEffect, useState } from "react";
-
 import { CopyIcon } from "@cihub/icons/copy";
 import { Button } from "@cihub/ui/components/button";
 import { Toast } from "@cihub/ui/components/toast";
-
-/** The command that submits a PR in a comment. */
-export const COMMAND = "/cihub merge";
+import { COMMAND } from "@/domain/queue/words";
+import { useTimedValue } from "@/hooks/use-timed-value";
 
 /** How long the button says what the copy did, and the toast says that it copied. */
 const RESULT_SHOWN_MS = 2_000;
 
 /** The command that submits a PR, and a button that copies it. */
 export function CopyCommand() {
-  const [result, setResult] = useState<"copied" | "failed" | null>(null);
-
-  useEffect(() => {
-    if (!result) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setResult(null);
-    }, RESULT_SHOWN_MS);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [result]);
+  const [result, setResult] = useTimedValue<"copied" | "failed">(RESULT_SHOWN_MS);
 
   return (
     <span className="inline-flex items-center gap-2.5 rounded-sm border border-border bg-muted py-1 pr-1 pl-3 font-mono text-base">

@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { client } from "@/client/client.gen";
 import type { QueueList } from "@/client/types.gen";
-import { type ReadKey, orgQueuesOptions, readKeyOf } from "./queries";
+import { type ReadKey, readKeyOf } from "@/domain/read-key";
+import { orgQueuesOptions } from "./queries";
 
 /** The event `queue_changed` of the stream of an organization. */
 const queueChanged = z.object({ queue_id: z.string(), seq: z.number() });

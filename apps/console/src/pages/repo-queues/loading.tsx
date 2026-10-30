@@ -1,6 +1,6 @@
 import { getRouteApi } from "@tanstack/react-router";
 
-import { QueuesSkeleton } from "@/components/queue/queues-skeleton";
+import { QueuesSkeleton } from "@/pages/repo-queues/components/queues-skeleton";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/");
 

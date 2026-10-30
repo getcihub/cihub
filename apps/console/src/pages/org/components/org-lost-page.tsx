@@ -5,7 +5,7 @@ import { Card } from "@cihub/ui/components/card";
 import { EmptyState } from "@cihub/ui/components/empty-state";
 import { LostIllustration } from "@cihub/ui/components/illustrations";
 import { Page } from "@cihub/ui/components/page";
-import { type Me, membershipOf } from "@/domain/session/session";
+import { type Me, membershipOf } from "@/domain/session/queries";
 import { useSignOut } from "@/hooks/use-sign-out";
 
 /**
@@ -16,6 +16,7 @@ import { useSignOut } from "@/hooks/use-sign-out";
  */
 export function OrgLostPage({ me, org }: { me: Me; org: string }) {
   const { startSignOut, hasSignOutFailed } = useSignOut();
+
   const current = membershipOf(me, org);
   const otherOrg = me.orgs.find((membership) => membership !== current);
 

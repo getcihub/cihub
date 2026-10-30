@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 
 import { Mark } from "@cihub/icons/brand/mark";
-import { ErrorIcon } from "@cihub/icons/error";
-import { Alert } from "@cihub/ui/components/alert";
 import { cn } from "@cihub/ui/lib/cn";
 
 export function Brand({ className }: { className?: string }) {
@@ -24,20 +22,4 @@ export function Lead({ children }: { children: ReactNode }) {
 
 export function Note({ children }: { children: ReactNode }) {
   return <p className="mt-4 text-md text-muted-foreground">{children}</p>;
-}
-
-/** What failed, in red, with the icon on the first line. */
-export function Failure({ className, children }: { className: string; children: ReactNode }) {
-  return (
-    <Alert
-      variant="destructive"
-      className={cn(
-        "items-start py-2.5 font-medium text-destructive [&>svg]:mt-px [&>svg]:size-4.5",
-        className,
-      )}
-    >
-      <ErrorIcon />
-      <span>{children}</span>
-    </Alert>
-  );
 }
