@@ -1,14 +1,14 @@
 use cihub_domain::JobClass;
-use cihub_store::{
-    begin_system, create_event_partitions, forget_permissions_before,
-    forget_tokens_without_session, next_month,
-};
+use cihub_store::{begin_system, create_event_partitions, next_month};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
 use tracing::info;
 
-use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
+use crate::{
+    Job, Outcome, PlatformError, enqueue_job, error_chain, forget_permissions_before,
+    forget_tokens_without_session,
+};
 
 pub const MAINTENANCE: &str = "maintenance";
 

@@ -5,27 +5,20 @@
 use std::path::Path;
 
 use cihub_domain::{
-    Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, CheckStatus, ConnectionKind,
-    ConnectionMode, Event, EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass,
-    JobState, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason, RepoConfigState,
-    RequiredStatusesSource, RunStatus, SubmittedVia, UserId,
+    Actor, ActorKind, CheckConclusion, CheckKind, CheckStatus, ConnectionKind, ConnectionMode,
+    Event, EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState,
+    MembershipRole, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason,
+    RepoConfigState, RequiredStatusesSource, RunStatus, SubmittedVia, UserId,
 };
-use cihub_domain::{ApiTokenId, DeviceCodeId, DeviceCodeState, MembershipRole, SessionId};
+use cihub_domain::{ApiScope, DeviceCodeState};
 use cihub_store::{
-    ApiTokenGrant, CLI_SESSION_IDLE_LIFETIME, DevicePoll, MIGRATOR, Membership, NewApiToken,
-    NewDeviceCode, NewSession, SessionClient, SessionGrant, StoreError, answer_device_code,
-    append_events, authenticate, authenticate_session, begin_org, begin_system, create_api_token,
-    create_device_code, create_event_partitions, create_session, delete_session,
-    delete_session_by_id, forget_memberships_before, forget_permissions_before,
-    forget_tokens_without_session, load_events, memberships_of, migrate, missing_migrations,
-    new_api_token_secret, new_cli_session_secret, new_device_code_secret, new_session_secret,
-    new_user_code, poll_device_code, record_membership, revert,
+    MIGRATOR, StoreError, append_events, begin_org, begin_system, create_event_partitions,
+    load_events, migrate, missing_migrations, revert,
 };
-use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use strum::IntoEnumIterator;
-use time::{Date, Duration, Month, OffsetDateTime};
+use time::{Date, Month, OffsetDateTime};
 use ulid::Ulid;
 
 async fn fixtures(name: &str) -> Migrator {
@@ -512,6 +505,16 @@ fn event(n: u128, actor: Actor, cause_id: Option<EventId>, kind: EventKind) -> E
     }
 }
 
+async fn insert_user(conn: &mut PgConnection) -> UserId {
+    let user_id = UserId::from_ulid(Ulid(7));
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
+        .bind(user_id.to_string())
+        .execute(conn)
+        .await
+        .unwrap();
+    user_id
+}
+
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_log_reads_back_in_order(pool: PgPool) {
     seed(&pool).await;
@@ -637,362 +640,4 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
     .unwrap_err();
 
     assert!(format!("{err:?}").contains("no partition"), "{err:?}");
-}
-
-fn at(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::from_unix_timestamp(1_789_000_000 + seconds).unwrap()
-}
-
-async fn last_used_at(pool: &PgPool) -> Option<OffsetDateTime> {
-    let mut tx = begin_system(pool).await.unwrap();
-    sqlx::query_scalar("SELECT last_used_at FROM api_tokens")
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap()
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_token_authenticates_until_it_expires(pool: PgPool) {
-    let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("INSERT INTO orgs (id, slug) VALUES ($1, 'org')")
-        .bind(org(1).to_string())
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-
-    tx.commit().await.unwrap();
-
-    let secret = new_api_token_secret().unwrap();
-    assert!(secret.expose_secret().starts_with("cht_"));
-    let scopes = [ApiScope::QueuesRead, ApiScope::PrsWrite];
-    let token = NewApiToken {
-        id: ApiTokenId::from_ulid(Ulid(1)),
-        org_id: org(1),
-        name: "ci",
-        scopes: &scopes,
-        expires_at: Some(at(3600)),
-    };
-    let mut tx = begin_org(&pool, org(1)).await.unwrap();
-    create_api_token(&mut tx, &token, &secret).await.unwrap();
-    tx.commit().await.unwrap();
-
-    let mut tx = begin_system(&pool).await.unwrap();
-    let hash: Vec<u8> = sqlx::query_scalar("SELECT token_hash FROM api_tokens")
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap();
-
-    assert_eq!(hash.len(), 32);
-    tx.rollback().await.unwrap();
-
-    let grant = ApiTokenGrant {
-        id: token.id,
-        org_id: org(1),
-        scopes: scopes.to_vec(),
-    };
-
-    assert_eq!(
-        authenticate(&pool, &secret, at(0)).await.unwrap(),
-        Some(grant)
-    );
-    assert_eq!(last_used_at(&pool).await, Some(at(0)));
-    authenticate(&pool, &secret, at(30)).await.unwrap().unwrap();
-
-    assert_eq!(last_used_at(&pool).await, Some(at(0)));
-    authenticate(&pool, &secret, at(90)).await.unwrap().unwrap();
-
-    assert_eq!(last_used_at(&pool).await, Some(at(90)));
-
-    assert_eq!(authenticate(&pool, &secret, at(3600)).await.unwrap(), None);
-    let other = new_api_token_secret().unwrap();
-    assert_ne!(other.expose_secret(), secret.expose_secret());
-    assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
-    let malformed = SecretString::from("Bearer cht_");
-    assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
-}
-
-async fn insert_user(conn: &mut PgConnection) -> UserId {
-    let user_id = UserId::from_ulid(Ulid(7));
-    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
-        .bind(user_id.to_string())
-        .execute(conn)
-        .await
-        .unwrap();
-    user_id
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_session_authenticates_until_it_expires_or_signs_out(pool: PgPool) {
-    let mut tx = begin_system(&pool).await.unwrap();
-    let user_id = insert_user(&mut tx).await;
-    let secret = new_session_secret().unwrap();
-    let other = new_session_secret().unwrap();
-    let session = NewSession {
-        id: SessionId::from_ulid(Ulid(1)),
-        user_id,
-        created_at: at(0),
-        expires_at: at(3600),
-    };
-    let grant = SessionGrant {
-        id: session.id,
-        user_id,
-        expires_at: at(3600),
-        client: SessionClient::Dashboard,
-    };
-
-    create_session(&mut tx, &session, &secret).await.unwrap();
-    tx.commit().await.unwrap();
-
-    assert!(secret.expose_secret().starts_with("chs_"));
-    assert_eq!(
-        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
-        Some(grant)
-    );
-    assert_eq!(
-        authenticate_session(&pool, &secret, at(3600))
-            .await
-            .unwrap(),
-        None
-    );
-    assert_eq!(authenticate(&pool, &secret, at(0)).await.unwrap(), None);
-    assert_eq!(
-        authenticate_session(&pool, &other, at(0)).await.unwrap(),
-        None
-    );
-
-    delete_session(&pool, &secret).await.unwrap();
-
-    assert_eq!(
-        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
-        None
-    );
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_session_of_the_command_line_ends_after_it_is_not_used(pool: PgPool) {
-    let mut tx = begin_system(&pool).await.unwrap();
-    let user_id = insert_user(&mut tx).await;
-    let secret = new_cli_session_secret().unwrap();
-    let session = NewSession {
-        id: SessionId::from_ulid(Ulid(1)),
-        user_id,
-        created_at: at(0),
-        expires_at: at(0) + CLI_SESSION_IDLE_LIFETIME,
-    };
-    let expires_at = |grant: Option<SessionGrant>| grant.unwrap().expires_at;
-
-    create_session(&mut tx, &session, &secret).await.unwrap();
-    tx.commit().await.unwrap();
-
-    assert!(secret.expose_secret().starts_with("chc_"));
-    let grant = authenticate_session(&pool, &secret, at(60)).await.unwrap();
-
-    assert_eq!(
-        grant.as_ref().map(|grant| grant.client),
-        Some(SessionClient::CommandLine)
-    );
-    assert_eq!(expires_at(grant), at(0) + CLI_SESSION_IDLE_LIFETIME);
-    let later = at(2 * 3600);
-    let grant = authenticate_session(&pool, &secret, later).await.unwrap();
-
-    assert_eq!(expires_at(grant), later + CLI_SESSION_IDLE_LIFETIME);
-    assert_eq!(authenticate(&pool, &secret, later).await.unwrap(), None);
-    let past_the_end = later + CLI_SESSION_IDLE_LIFETIME;
-
-    assert_eq!(
-        authenticate_session(&pool, &secret, past_the_end)
-            .await
-            .unwrap(),
-        None
-    );
-
-    delete_session_by_id(&pool, session.id).await.unwrap();
-
-    assert_eq!(
-        authenticate_session(&pool, &secret, later).await.unwrap(),
-        None
-    );
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_device_code_gives_one_session_once_its_person_approves_it(pool: PgPool) {
-    let mut tx = begin_system(&pool).await.unwrap();
-    let user_id = insert_user(&mut tx).await;
-    tx.commit().await.unwrap();
-    let interval = Duration::seconds(5);
-    let device_code = new_device_code_secret().unwrap();
-    let user_code = new_user_code().unwrap();
-    let code = NewDeviceCode {
-        id: DeviceCodeId::from_ulid(Ulid(1)),
-        device_code: &device_code,
-        user_code: &user_code,
-        created_at: at(0),
-        expires_at: at(900),
-    };
-    let poll = |now: OffsetDateTime| {
-        let (pool, device_code) = (pool.clone(), device_code.clone());
-        async move {
-            let mut tx = pool.begin().await.unwrap();
-            let poll = poll_device_code(&mut tx, &device_code, interval, now)
-                .await
-                .unwrap();
-            tx.commit().await.unwrap();
-            poll
-        }
-    };
-
-    assert!(create_device_code(&pool, &code).await.unwrap());
-    let twin = NewDeviceCode {
-        id: DeviceCodeId::from_ulid(Ulid(2)),
-        ..code
-    };
-    assert!(!create_device_code(&pool, &twin).await.unwrap());
-    assert_eq!(poll(at(5)).await, DevicePoll::Pending);
-    assert_eq!(poll(at(6)).await, DevicePoll::TooFast);
-
-    let approve = async |code: &str, now| {
-        answer_device_code(&pool, code, user_id, DeviceCodeState::Approved, now)
-            .await
-            .unwrap()
-    };
-    assert!(!approve("BCDF-GHJK", at(20)).await);
-    assert!(!approve(&user_code, at(900)).await);
-    assert!(approve(&user_code, at(20)).await);
-    assert!(!approve(&user_code, at(21)).await);
-
-    assert_eq!(poll(at(30)).await, DevicePoll::Approved(user_id));
-    assert_eq!(poll(at(40)).await, DevicePoll::Expired);
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_denied_or_expired_device_code_gives_no_session(pool: PgPool) {
-    let mut tx = begin_system(&pool).await.unwrap();
-    let user_id = insert_user(&mut tx).await;
-    tx.commit().await.unwrap();
-    let interval = Duration::seconds(5);
-    let codes: Vec<_> = (1..=2)
-        .map(|_| (new_device_code_secret().unwrap(), new_user_code().unwrap()))
-        .collect();
-
-    for (n, (device_code, user_code)) in (1..).zip(&codes) {
-        let code = NewDeviceCode {
-            id: DeviceCodeId::from_ulid(Ulid(n)),
-            device_code,
-            user_code,
-            created_at: at(0),
-            expires_at: at(900),
-        };
-        assert!(create_device_code(&pool, &code).await.unwrap());
-    }
-    let mut tx = pool.begin().await.unwrap();
-    let (denied, expired) = (&codes[0], &codes[1]);
-
-    assert!(
-        answer_device_code(&pool, &denied.1, user_id, DeviceCodeState::Denied, at(10))
-            .await
-            .unwrap()
-    );
-    assert_eq!(
-        poll_device_code(&mut tx, &denied.0, interval, at(20))
-            .await
-            .unwrap(),
-        DevicePoll::Denied
-    );
-    assert_eq!(
-        poll_device_code(&mut tx, &expired.0, interval, at(900))
-            .await
-            .unwrap(),
-        DevicePoll::Expired
-    );
-    let malformed = SecretString::from("chd_");
-    assert_eq!(
-        poll_device_code(&mut tx, &malformed, interval, at(20))
-            .await
-            .unwrap(),
-        DevicePoll::Expired
-    );
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
-    seed(&pool).await;
-    let mut tx = begin_system(&pool).await.unwrap();
-    let user_id = insert_user(&mut tx).await;
-    let now = at(30 * 86_400);
-    let expected = [
-        (1, MembershipRole::Admin, 1),
-        (2, MembershipRole::Member, 0),
-    ]
-    .map(|(n, role, minutes)| Membership {
-        org_id: org(n),
-        org_slug: format!("org-{n}"),
-        org_name: None,
-        org_description: None,
-        org_avatar_url: None,
-        role,
-        is_org_suspended: false,
-        refreshed_at: now + Duration::minutes(minutes),
-    });
-
-    tx.commit().await.unwrap();
-    for n in [1, 2] {
-        let mut tx = begin_org(&pool, org(n)).await.unwrap();
-        record_membership(&mut tx, org(n), user_id, MembershipRole::Member, now)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-    }
-
-    let mut tx = begin_org(&pool, org(1)).await.unwrap();
-    record_membership(
-        &mut tx,
-        org(1),
-        user_id,
-        MembershipRole::Admin,
-        now + Duration::minutes(1),
-    )
-    .await
-    .unwrap();
-    let forgotten = forget_memberships_before(&mut tx, org(1), now + Duration::minutes(1))
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
-
-    assert_eq!(forgotten, 1, "the refresh of org 1 did not see user-1");
-    assert_eq!(memberships_of(&pool, user_id).await.unwrap(), expected);
-}
-
-/// A person without a session loses their token but keeps what it read,
-/// until the permissions grow older than the retention.
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_sign_out_keeps_the_permissions_until_they_grow_old(pool: PgPool) {
-    seed(&pool).await;
-    let read_at = OffsetDateTime::new_utc(september(), time::Time::MIDNIGHT);
-    let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("UPDATE users SET scm_token = '\\x00', synced_at = $1 WHERE id = 'user-1'")
-        .bind(read_at)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    let person =
-        "SELECT scm_token IS NOT NULL, synced_at IS NOT NULL FROM users WHERE id = 'user-1'";
-
-    let tokens = forget_tokens_without_session(&mut tx).await.unwrap();
-    let after_sign_out: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
-    let kept = forget_permissions_before(&mut tx, read_at).await.unwrap();
-    let forgotten = forget_permissions_before(&mut tx, read_at + Duration::seconds(1))
-        .await
-        .unwrap();
-    let after_retention: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
-
-    assert_eq!(tokens, 1);
-    assert_eq!(after_sign_out, (false, true), "the sync stays");
-    assert_eq!(kept, 0);
-    assert_eq!(forgotten, 2);
-    assert_eq!(
-        after_retention,
-        (false, false),
-        "the sync goes with its permissions"
-    );
-    assert_eq!(count(&mut tx, "repo_permissions").await, 0);
 }

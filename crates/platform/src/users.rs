@@ -1,8 +1,7 @@
 use cihub_domain::UserId;
+use cihub_store::StoreError;
 use sqlx::{PgConnection, PgPool};
 use time::OffsetDateTime;
-
-use crate::StoreError;
 
 /// The account `external_id` of the SCM, created with `id` when it is missing.
 /// Its login follows a rename: the log points to the account, never to a login.

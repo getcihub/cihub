@@ -7,15 +7,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cihub_domain::{
-    Actor, ApiScope, ConnectionId, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
-    JobClass, MembershipRole, OrgId, Permission, QueueId, RepoId, UserId,
+    Actor, ApiScope, ApiTokenId, ConnectionId, ConnectionKind, ConnectionMode, Event, EventId,
+    EventKind, JobClass, MembershipRole, OrgId, Permission, QueueId, RepoId, UserId,
 };
 use cihub_platform::{
-    Access, ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
-    MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, Subscription, TICK, Wake,
-    acquire_leases, backoff, begin_reconciliation, claim_jobs, complete_job, create_token,
-    delete_delivery, deliver_all, enqueue_job, fail_job, find_route, lock_queue, maintenance_job,
-    pending_deliveries, record_budgets, record_sign_in, release_leases, repo_permission_now,
+    Access, ApiTokenGrant, ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION,
+    Job, LEASE_TTL, MAX_ATTEMPTS, MIN_WAIT, Membership, NewApiToken, Outcome, PlatformError,
+    QueueWakeup, Retry, Subscription, TICK, UserProfile, Wake, acquire_leases, authenticate,
+    backoff, begin_reconciliation, claim_jobs, complete_job, create_api_token, create_token,
+    delete_delivery, deliver_all, enqueue_job, fail_job, find_route, forget_memberships_before,
+    forget_permissions_before, forget_tokens_without_session, lock_queue, maintenance_job,
+    memberships_of, new_api_token_secret, pending_deliveries, profile_of, record_budgets,
+    record_membership, record_sign_in, release_leases, repo_permission_now,
     request_installations_sync, request_installations_sync_at_start, request_maintenance,
     request_member_syncs, request_repo_syncs, role_now, run_budget_writer, run_maintenance,
     run_router, run_sync_installation, run_sync_installations, run_sync_members, run_sync_repos,
@@ -31,8 +34,7 @@ use cihub_scm::{
     SignedIn, code_challenge,
 };
 use cihub_store::{
-    DatabaseCipher, Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
-    create_event_partitions, memberships_of, profile_of,
+    DatabaseCipher, append_events, begin_org, begin_system, create_event_partitions,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
@@ -2393,4 +2395,171 @@ async fn a_subscription_that_fails_reads_its_events_again(pool: PgPool) {
 
     assert_eq!(*seen.lock().unwrap(), [1, 2, 1, 2]);
     assert_eq!(cursor(&pool).await, Some(2));
+}
+
+async fn last_used_at(pool: &PgPool) -> Option<OffsetDateTime> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT last_used_at FROM api_tokens")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_token_authenticates_until_it_expires(pool: PgPool) {
+    seed(&pool).await;
+
+    let secret = new_api_token_secret().unwrap();
+    assert!(secret.expose_secret().starts_with("cht_"));
+    let scopes = [ApiScope::QueuesRead, ApiScope::PrsWrite];
+    let token = NewApiToken {
+        id: ApiTokenId::from_ulid(Ulid(1)),
+        org_id: org(),
+        name: "ci",
+        scopes: &scopes,
+        expires_at: Some(at(3600)),
+    };
+    let mut tx = begin_org(&pool, org()).await.unwrap();
+    create_api_token(&mut tx, &token, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let hash: Vec<u8> = sqlx::query_scalar("SELECT token_hash FROM api_tokens")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(hash.len(), 32);
+    tx.rollback().await.unwrap();
+
+    let grant = ApiTokenGrant {
+        id: token.id,
+        org_id: org(),
+        scopes: scopes.to_vec(),
+    };
+
+    assert_eq!(
+        authenticate(&pool, &secret, at(0)).await.unwrap(),
+        Some(grant)
+    );
+    assert_eq!(last_used_at(&pool).await, Some(at(0)));
+    authenticate(&pool, &secret, at(30)).await.unwrap().unwrap();
+
+    assert_eq!(last_used_at(&pool).await, Some(at(0)));
+    authenticate(&pool, &secret, at(90)).await.unwrap().unwrap();
+
+    assert_eq!(last_used_at(&pool).await, Some(at(90)));
+
+    assert_eq!(authenticate(&pool, &secret, at(3600)).await.unwrap(), None);
+    let other = new_api_token_secret().unwrap();
+    assert_ne!(other.expose_secret(), secret.expose_secret());
+    assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
+    let malformed = SecretString::from("Bearer cht_");
+    assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
+    seed(&pool).await;
+    let globex = OrgId::from_ulid(Ulid(2));
+    let user_id = UserId::from_ulid(Ulid(7));
+    let now = at(30 * 86_400);
+    let expected = [
+        (globex, "globex", MembershipRole::Member, 0),
+        (org(), "org", MembershipRole::Admin, 1),
+    ]
+    .map(|(org_id, slug, role, minutes)| Membership {
+        org_id,
+        org_slug: slug.into(),
+        org_name: None,
+        org_description: None,
+        org_avatar_url: None,
+        role,
+        is_org_suspended: false,
+        refreshed_at: now + Duration::minutes(minutes),
+    });
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('{globex}', 'globex');
+         INSERT INTO users (id, external_id, login) VALUES
+             ('{user_id}', '7', 'hubot'), ('user-1', '1', 'octocat');
+         INSERT INTO memberships (org_id, user_id, role, refreshed_at)
+             VALUES ('{org}', 'user-1', 'member', '{at}');",
+        org = org(),
+        at = at(0),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    for org_id in [org(), globex] {
+        let mut tx = begin_org(&pool, org_id).await.unwrap();
+        record_membership(&mut tx, org_id, user_id, MembershipRole::Member, now)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    let mut tx = begin_org(&pool, org()).await.unwrap();
+    record_membership(
+        &mut tx,
+        org(),
+        user_id,
+        MembershipRole::Admin,
+        now + Duration::minutes(1),
+    )
+    .await
+    .unwrap();
+    let forgotten = forget_memberships_before(&mut tx, org(), now + Duration::minutes(1))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(forgotten, 1, "the refresh of org did not see user-1");
+    assert_eq!(memberships_of(&pool, user_id).await.unwrap(), expected);
+}
+
+/// A person without a session loses their token but keeps what it read,
+/// until the permissions grow older than the retention.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_out_keeps_the_permissions_until_they_grow_old(pool: PgPool) {
+    seed(&pool).await;
+    let read_at = at(0);
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO users (id, external_id, login, scm_token, synced_at)
+             VALUES ('user-1', '1', 'octocat', '\\x00', '{read_at}');
+         INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
+             VALUES ('{org}', 'r', 'user-1', 'read', '{read_at}');",
+        org = org(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let person =
+        "SELECT scm_token IS NOT NULL, synced_at IS NOT NULL FROM users WHERE id = 'user-1'";
+
+    let tokens = forget_tokens_without_session(&mut tx).await.unwrap();
+    let after_sign_out: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
+    let kept = forget_permissions_before(&mut tx, read_at).await.unwrap();
+    let forgotten = forget_permissions_before(&mut tx, read_at + Duration::seconds(1))
+        .await
+        .unwrap();
+    let after_retention: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
+    let permissions: i64 = sqlx::query_scalar("SELECT count(*) FROM repo_permissions")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(tokens, 1);
+    assert_eq!(after_sign_out, (false, true), "the sync stays");
+    assert_eq!(kept, 0);
+    assert_eq!(forgotten, 1);
+    assert_eq!(
+        after_retention,
+        (false, false),
+        "the sync goes with its permissions"
+    );
+    assert_eq!(permissions, 0);
 }

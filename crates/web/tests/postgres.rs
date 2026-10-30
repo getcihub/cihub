@@ -6,21 +6,26 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use cihub_domain::{
-    ApiScope, ApiTokenId, MembershipRole, OrgId, QueueId, RepoId, SessionId, UserId,
+    ApiScope, ApiTokenId, DeviceCodeId, DeviceCodeState, MembershipRole, OrgId, QueueId, RepoId,
+    SessionId, UserId,
 };
-use cihub_platform::{QueueNewsFeed, notify_queue_changed};
+use cihub_platform::{
+    NewApiToken, QueueNewsFeed, authenticate, create_api_token, ensure_user, new_api_token_secret,
+    notify_queue_changed, record_membership, record_profile,
+};
 use cihub_scm::sim::Sim;
 use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
-use cihub_store::{
-    DatabaseCipher, NewApiToken, NewSession, begin_org, begin_system, create_api_token,
-    create_session, csrf_token, ensure_user, new_api_token_secret, new_session_secret,
-    record_membership, record_profile,
+use cihub_store::{DatabaseCipher, begin_org, begin_system};
+use cihub_web::{
+    CLI_SESSION_IDLE_LIFETIME, Dashboard, DevicePoll, GithubWebhooks, NewDeviceCode, NewSession,
+    SessionClient, SessionGrant, answer_device_code, authenticate_session, create_device_code,
+    create_session, csrf_token, delete_session, delete_session_by_id, new_cli_session_secret,
+    new_device_code_secret, new_session_secret, new_user_code, poll_device_code,
 };
-use cihub_web::{Dashboard, GithubWebhooks};
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
-use sqlx::PgPool;
-use time::OffsetDateTime;
+use sqlx::{PgConnection, PgPool};
+use time::{Duration, OffsetDateTime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
@@ -1175,5 +1180,211 @@ async fn the_device_code_routes_refuse_a_large_body(pool: PgPool) {
         answer.body.contains("length limit exceeded"),
         "{}",
         answer.body
+    );
+}
+
+fn at(seconds: i64) -> OffsetDateTime {
+    now() + Duration::seconds(seconds)
+}
+
+async fn insert_user(conn: &mut PgConnection) -> UserId {
+    let user_id = UserId::from_ulid(Ulid(7));
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
+        .bind(user_id.to_string())
+        .execute(conn)
+        .await
+        .unwrap();
+    user_id
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_authenticates_until_it_expires_or_signs_out(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    let secret = new_session_secret().unwrap();
+    let other = new_session_secret().unwrap();
+    let session = NewSession {
+        id: SessionId::from_ulid(Ulid(1)),
+        user_id,
+        created_at: at(0),
+        expires_at: at(3600),
+    };
+    let grant = SessionGrant {
+        id: session.id,
+        user_id,
+        expires_at: at(3600),
+        client: SessionClient::Dashboard,
+    };
+
+    create_session(&mut tx, &session, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert!(secret.expose_secret().starts_with("chs_"));
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
+        Some(grant)
+    );
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(3600))
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(authenticate(&pool, &secret, at(0)).await.unwrap(), None);
+    assert_eq!(
+        authenticate_session(&pool, &other, at(0)).await.unwrap(),
+        None
+    );
+
+    delete_session(&pool, &secret).await.unwrap();
+
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
+        None
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_of_the_command_line_ends_after_it_is_not_used(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    let secret = new_cli_session_secret().unwrap();
+    let session = NewSession {
+        id: SessionId::from_ulid(Ulid(1)),
+        user_id,
+        created_at: at(0),
+        expires_at: at(0) + CLI_SESSION_IDLE_LIFETIME,
+    };
+    let expires_at = |grant: Option<SessionGrant>| grant.unwrap().expires_at;
+
+    create_session(&mut tx, &session, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert!(secret.expose_secret().starts_with("chc_"));
+    let grant = authenticate_session(&pool, &secret, at(60)).await.unwrap();
+
+    assert_eq!(
+        grant.as_ref().map(|grant| grant.client),
+        Some(SessionClient::CommandLine)
+    );
+    assert_eq!(expires_at(grant), at(0) + CLI_SESSION_IDLE_LIFETIME);
+    let later = at(2 * 3600);
+    let grant = authenticate_session(&pool, &secret, later).await.unwrap();
+
+    assert_eq!(expires_at(grant), later + CLI_SESSION_IDLE_LIFETIME);
+    assert_eq!(authenticate(&pool, &secret, later).await.unwrap(), None);
+    let past_the_end = later + CLI_SESSION_IDLE_LIFETIME;
+
+    assert_eq!(
+        authenticate_session(&pool, &secret, past_the_end)
+            .await
+            .unwrap(),
+        None
+    );
+
+    delete_session_by_id(&pool, session.id).await.unwrap();
+
+    assert_eq!(
+        authenticate_session(&pool, &secret, later).await.unwrap(),
+        None
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_device_code_gives_one_session_once_its_person_approves_it(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    tx.commit().await.unwrap();
+    let interval = Duration::seconds(5);
+    let device_code = new_device_code_secret().unwrap();
+    let user_code = new_user_code().unwrap();
+    let code = NewDeviceCode {
+        id: DeviceCodeId::from_ulid(Ulid(1)),
+        device_code: &device_code,
+        user_code: &user_code,
+        created_at: at(0),
+        expires_at: at(900),
+    };
+    let poll = |now: OffsetDateTime| {
+        let (pool, device_code) = (pool.clone(), device_code.clone());
+        async move {
+            let mut tx = pool.begin().await.unwrap();
+            let poll = poll_device_code(&mut tx, &device_code, interval, now)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+            poll
+        }
+    };
+
+    assert!(create_device_code(&pool, &code).await.unwrap());
+    let twin = NewDeviceCode {
+        id: DeviceCodeId::from_ulid(Ulid(2)),
+        ..code
+    };
+    assert!(!create_device_code(&pool, &twin).await.unwrap());
+    assert_eq!(poll(at(5)).await, DevicePoll::Pending);
+    assert_eq!(poll(at(6)).await, DevicePoll::TooFast);
+
+    let approve = async |code: &str, now| {
+        answer_device_code(&pool, code, user_id, DeviceCodeState::Approved, now)
+            .await
+            .unwrap()
+    };
+    assert!(!approve("BCDF-GHJK", at(20)).await);
+    assert!(!approve(&user_code, at(900)).await);
+    assert!(approve(&user_code, at(20)).await);
+    assert!(!approve(&user_code, at(21)).await);
+
+    assert_eq!(poll(at(30)).await, DevicePoll::Approved(user_id));
+    assert_eq!(poll(at(40)).await, DevicePoll::Expired);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_denied_or_expired_device_code_gives_no_session(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    tx.commit().await.unwrap();
+    let interval = Duration::seconds(5);
+    let codes: Vec<_> = (1..=2)
+        .map(|_| (new_device_code_secret().unwrap(), new_user_code().unwrap()))
+        .collect();
+
+    for (n, (device_code, user_code)) in (1..).zip(&codes) {
+        let code = NewDeviceCode {
+            id: DeviceCodeId::from_ulid(Ulid(n)),
+            device_code,
+            user_code,
+            created_at: at(0),
+            expires_at: at(900),
+        };
+        assert!(create_device_code(&pool, &code).await.unwrap());
+    }
+    let mut tx = pool.begin().await.unwrap();
+    let (denied, expired) = (&codes[0], &codes[1]);
+
+    assert!(
+        answer_device_code(&pool, &denied.1, user_id, DeviceCodeState::Denied, at(10))
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        poll_device_code(&mut tx, &denied.0, interval, at(20))
+            .await
+            .unwrap(),
+        DevicePoll::Denied
+    );
+    assert_eq!(
+        poll_device_code(&mut tx, &expired.0, interval, at(900))
+            .await
+            .unwrap(),
+        DevicePoll::Expired
+    );
+    let malformed = SecretString::from("chd_");
+    assert_eq!(
+        poll_device_code(&mut tx, &malformed, interval, at(20))
+            .await
+            .unwrap(),
+        DevicePoll::Expired
     );
 }

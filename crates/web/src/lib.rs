@@ -69,7 +69,15 @@ struct Webhooks {
 }
 
 pub use api::{REQUESTS_PER_MINUTE, openapi};
-pub use session::SIGN_OUT_PATH;
+pub use device::{
+    DevicePoll, NewDeviceCode, answer_device_code, create_device_code, new_device_code_secret,
+    new_user_code, poll_device_code,
+};
+pub use session::{
+    CLI_SESSION_IDLE_LIFETIME, NewSession, SIGN_OUT_PATH, SessionClient, SessionGrant,
+    authenticate_session, create_session, csrf_token, delete_session, delete_session_by_id,
+    new_cli_session_secret, new_session_secret,
+};
 
 pub fn router(
     pool: PgPool,

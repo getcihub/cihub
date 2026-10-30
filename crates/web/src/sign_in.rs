@@ -15,16 +15,16 @@ use cihub_domain::{ConnectionKind, JobClass, SessionId, UserId};
 use cihub_github::SIGN_IN_CALLBACK_PATH;
 use cihub_platform::{PlatformError, record_sign_in};
 use cihub_scm::{Scm, ScmError, SignInCode, SignInRequest, code_challenge};
-use cihub_store::{
-    DatabaseCipher, NewSession, PgPool, StoreError, begin_system, create_session, csrf_token,
-    new_session_secret, new_sign_in_secret,
-};
+use cihub_store::{DatabaseCipher, PgPool, StoreError, begin_system};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
-use crate::session::{CSRF_COOKIE, SESSION_COOKIE, cookie, is_same_text, set_cookie};
+use crate::session::{
+    CSRF_COOKIE, NewSession, SESSION_COOKIE, cookie, create_session, csrf_token, is_same_text,
+    new_session_secret, new_sign_in_secret, set_cookie,
+};
 
 /// The cookie that keeps the `state` and the PKCE verifier of a sign-in in
 /// progress, the installation that the Setup URL named, and the page to open

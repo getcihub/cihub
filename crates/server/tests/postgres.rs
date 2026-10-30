@@ -343,8 +343,8 @@ async fn two_queues(pool: &PgPool) -> String {
     .execute(&mut *tx)
     .await
     .unwrap();
-    let secret = cihub_store::new_api_token_secret().unwrap();
-    let token = cihub_store::NewApiToken {
+    let secret = cihub_platform::new_api_token_secret().unwrap();
+    let token = cihub_platform::NewApiToken {
         id: ApiTokenId::from_ulid(Ulid(8)),
         org_id: org,
         name: "test",
@@ -356,7 +356,7 @@ async fn two_queues(pool: &PgPool) -> String {
         expires_at: None,
     };
 
-    cihub_store::create_api_token(&mut tx, &token, &secret)
+    cihub_platform::create_api_token(&mut tx, &token, &secret)
         .await
         .unwrap();
 
@@ -406,8 +406,8 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
 /// A session of the dashboard of `ada`: its cookie and its CSRF token.
 async fn dashboard_session(pool: &PgPool) -> (String, String) {
     let user_id = UserId::from_ulid(Ulid(5));
-    let secret = cihub_store::new_session_secret().unwrap();
-    let session = cihub_store::NewSession {
+    let secret = cihub_web::new_session_secret().unwrap();
+    let session = cihub_web::NewSession {
         id: SessionId::from_ulid(Ulid(5)),
         user_id,
         // The server reads the clock: the session outlives the test.
@@ -416,16 +416,16 @@ async fn dashboard_session(pool: &PgPool) -> (String, String) {
     };
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
 
-    cihub_store::ensure_user(&mut tx, user_id, "5", "ada")
+    cihub_platform::ensure_user(&mut tx, user_id, "5", "ada")
         .await
         .unwrap();
-    cihub_store::create_session(&mut tx, &session, &secret)
+    cihub_web::create_session(&mut tx, &session, &secret)
         .await
         .unwrap();
     tx.commit().await.unwrap();
     (
         format!("__Host-cihub_session={}", secret.expose_secret()),
-        cihub_store::csrf_token(&secret),
+        cihub_web::csrf_token(&secret),
     )
 }
 
@@ -539,7 +539,7 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
     assert_eq!(lines.len(), 1, "{stdout}");
     let token = SecretString::from(lines[0]);
     let now = time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
-    let grant = cihub_store::authenticate(&pool, &token, now)
+    let grant = cihub_platform::authenticate(&pool, &token, now)
         .await
         .unwrap()
         .unwrap();

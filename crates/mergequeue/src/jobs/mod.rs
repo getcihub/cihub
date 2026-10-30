@@ -20,9 +20,9 @@ use cihub_domain::{
     ReviewDecision, UserId,
 };
 use cihub_mq_core::PrObservation;
-use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
+use cihub_platform::{Job, Outcome, PlatformError, ensure_user, error_chain, mark_dirty};
 use cihub_scm::{PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser};
-use cihub_store::{PgPool, StoreError, begin_system, deposit_fact, ensure_user};
+use cihub_store::{PgPool, StoreError, begin_system, deposit_fact};
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
 use time::OffsetDateTime;

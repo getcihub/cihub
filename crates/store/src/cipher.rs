@@ -3,7 +3,7 @@ use ring::hkdf::{HKDF_SHA256, Salt};
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::StoreError;
-use crate::tokens::draw_secret_bytes;
+use crate::secret::draw_secret_bytes;
 
 /// The shortest `database.secret`: 32 bytes, the size of the key.
 pub const MIN_DATABASE_SECRET_BYTES: usize = 32;

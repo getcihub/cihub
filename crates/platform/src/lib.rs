@@ -4,7 +4,7 @@
 //! routing and the sweep of the deliveries, the sync of the installations of
 //! the App into organizations and connections, the read of the repositories
 //! of the connections, the roles of the people who sign in and of the members
-//! of each account, the token of a person and what it reaches, the API tokens of an operator, the contract of a
+//! of each account, the users and their profile, the token of a person and what it reaches, the API tokens, the contract of a
 //! module, and what the routes of the modules share. The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
@@ -26,6 +26,7 @@ mod routing;
 mod subscriptions;
 mod sweep;
 mod tokens;
+mod users;
 mod wake;
 mod worker;
 
@@ -55,16 +56,18 @@ pub use maintenance::{
     MAINTENANCE, execute_maintenance, maintenance_job, request_maintenance, run_maintenance,
 };
 pub use members::{
-    SYNC_MEMBERS, record_sign_in, request_member_syncs, run_sync_members, sync_members_executor,
-    sync_members_job,
+    Membership, ORG_IS_SUSPENDED, SYNC_MEMBERS, forget_memberships_before, memberships_of,
+    record_membership, record_sign_in, request_member_syncs, run_sync_members,
+    sync_members_executor, sync_members_job,
 };
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use news::{QueueChange, QueueNews, QueueNewsFeed, notify_queue_changed};
 pub use page::{PAGE_ERRORS, Page, cursor_of};
 pub use persons::{
-    ACCESS_LIFETIME, Access, SYNC_USER, repo_permission_now, request_user_sync,
-    request_user_sync_when_old, role_now, run_sync_user, sync_user_executor, sync_user_job,
-    token_of_person,
+    ACCESS_LIFETIME, Access, PersonToken, SYNC_USER, forget_permissions_before,
+    forget_tokens_without_session, keep_person_token, readable_repos, repo_permission_now,
+    request_user_sync, request_user_sync_when_old, role_now, run_sync_user, sync_user_executor,
+    sync_user_job, token_of_person,
 };
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
 pub use subscriptions::{
@@ -72,7 +75,10 @@ pub use subscriptions::{
     run_subscriptions,
 };
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
-pub use tokens::create_token;
+pub use tokens::{
+    ApiTokenGrant, NewApiToken, authenticate, create_api_token, create_token, new_api_token_secret,
+};
+pub use users::{UserProfile, ensure_user, profile_of, record_profile};
 pub use wake::{
     MIN_WAIT, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
     until_next_tick,

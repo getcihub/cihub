@@ -996,13 +996,13 @@ async fn serve_api_with(
     scm: Arc<dyn Scm>,
     cancel: CancellationToken,
 ) -> (String, String) {
-    let secret = cihub_store::new_api_token_secret().unwrap();
+    let secret = cihub_platform::new_api_token_secret().unwrap();
     let scopes = [
         ApiScope::QueuesRead,
         ApiScope::QueuesWrite,
         ApiScope::PrsWrite,
     ];
-    let token = cihub_store::NewApiToken {
+    let token = cihub_platform::NewApiToken {
         id: ApiTokenId::from_ulid(Ulid(40)),
         org_id: org(),
         name: "test",
@@ -1010,7 +1010,7 @@ async fn serve_api_with(
         expires_at: None,
     };
     let mut tx = begin_system(pool).await.unwrap();
-    cihub_store::create_api_token(&mut tx, &token, &secret)
+    cihub_platform::create_api_token(&mut tx, &token, &secret)
         .await
         .unwrap();
 
@@ -6785,8 +6785,8 @@ async fn play_chaos(pool: PgPool, config: &'static str) {
 /// and its secret.
 async fn session_of(pool: &PgPool, n: u128, login: &str, role: MembershipRole) -> SecretString {
     let user_id = UserId::from_ulid(Ulid(n));
-    let secret = cihub_store::new_session_secret().unwrap();
-    let session = cihub_store::NewSession {
+    let secret = cihub_web::new_session_secret().unwrap();
+    let session = cihub_web::NewSession {
         id: SessionId::from_ulid(Ulid(n)),
         user_id,
         created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
@@ -6794,13 +6794,13 @@ async fn session_of(pool: &PgPool, n: u128, login: &str, role: MembershipRole) -
     };
     let mut tx = begin_system(pool).await.unwrap();
 
-    cihub_store::ensure_user(&mut tx, user_id, &n.to_string(), login)
+    cihub_platform::ensure_user(&mut tx, user_id, &n.to_string(), login)
         .await
         .unwrap();
-    cihub_store::create_session(&mut tx, &session, &secret)
+    cihub_web::create_session(&mut tx, &session, &secret)
         .await
         .unwrap();
-    cihub_store::record_membership(&mut tx, org(), user_id, role, session.created_at)
+    cihub_platform::record_membership(&mut tx, org(), user_id, role, session.created_at)
         .await
         .unwrap();
     // The SCM gives the admin of an organization `admin` on its
@@ -6836,7 +6836,7 @@ async fn call_as(
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let csrf = if with_csrf {
-        format!("X-CSRF-Token: {}\r\n", cihub_store::csrf_token(secret))
+        format!("X-CSRF-Token: {}\r\n", cihub_web::csrf_token(secret))
     } else {
         String::new()
     };
@@ -7142,7 +7142,7 @@ async fn a_percent_encoded_repository_name_does_not_bypass_the_permission(pool: 
                  Cookie: __Host-cihub_session={}\r\nX-CSRF-Token: {}\r\n\
                  Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}",
                 session.expose_secret(),
-                cihub_store::csrf_token(&session),
+                cihub_web::csrf_token(&session),
             );
             let mut stream = tokio::net::TcpStream::connect(&addr).await.unwrap();
             stream.write_all(request.as_bytes()).await.unwrap();
@@ -7218,14 +7218,14 @@ async fn signed_in(pool: &PgPool, sim: &Sim, person: &ScmUser) -> SecretString {
     let (_, token) = sim.sign_in(&code, JobClass::Interactive).await.unwrap();
     let cipher = cihub_store::DatabaseCipher::new(&SecretString::from(DATABASE_SECRET)).unwrap();
     let user_id = UserId::from_ulid(Ulid(70));
-    let secret = cihub_store::new_session_secret().unwrap();
-    let session = cihub_store::NewSession {
+    let secret = cihub_web::new_session_secret().unwrap();
+    let session = cihub_web::NewSession {
         id: SessionId::from_ulid(Ulid(70)),
         user_id,
         created_at: web_clock(),
         expires_at: web_clock() + Duration::days(14),
     };
-    let token = cihub_store::PersonToken {
+    let token = cihub_platform::PersonToken {
         access: token.access,
         access_expires_at: None,
         refresh: None,
@@ -7233,16 +7233,16 @@ async fn signed_in(pool: &PgPool, sim: &Sim, person: &ScmUser) -> SecretString {
     };
     let mut tx = begin_system(pool).await.unwrap();
 
-    cihub_store::ensure_user(&mut tx, user_id, &person.external_id, &person.login)
+    cihub_platform::ensure_user(&mut tx, user_id, &person.external_id, &person.login)
         .await
         .unwrap();
-    cihub_store::create_session(&mut tx, &session, &secret)
+    cihub_web::create_session(&mut tx, &session, &secret)
         .await
         .unwrap();
-    cihub_store::keep_person_token(&mut tx, &cipher, user_id, &token)
+    cihub_platform::keep_person_token(&mut tx, &cipher, user_id, &token)
         .await
         .unwrap();
-    cihub_store::record_membership(&mut tx, org(), user_id, MembershipRole::Member, web_clock())
+    cihub_platform::record_membership(&mut tx, org(), user_id, MembershipRole::Member, web_clock())
         .await
         .unwrap();
     tx.commit().await.unwrap();

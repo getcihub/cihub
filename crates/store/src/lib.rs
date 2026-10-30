@@ -1,53 +1,30 @@
 //! Postgres store of CIHub: the connection pool, the transactions of an
-//! organization or of the system (row level security), and
-//! the migrations embedded from `migrations/`. It holds no
-//! queue logic and does not decide when the migrations run: `cihub-server
-//! migrate up` applies them, `cihub-server migrate down` reverts them, and
+//! organization or of the system (row level security), the log of the
+//! queues, the secrets that the tables seal or hash, and the migrations
+//! embedded from `migrations/`. It holds no queue logic and no table of a
+//! module: each module writes its tables in the transactions that it opens
+//! here. It does not decide when the migrations run: `cihub-server migrate
+//! up` applies them, `cihub-server migrate down` reverts them, and
 //! `cihub-server start` refuses to start while one is missing.
 
 mod cipher;
-mod device_codes;
 mod events;
-mod memberships;
-mod persons;
-mod sessions;
-mod tokens;
-mod users;
+mod secret;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
 use cihub_domain::OrgId;
 pub use cipher::{DatabaseCipher, MIN_DATABASE_SECRET_BYTES};
-pub use device_codes::{
-    DevicePoll, NewDeviceCode, answer_device_code, create_device_code, new_device_code_secret,
-    new_user_code, poll_device_code,
-};
 pub use events::{
     append_events, create_event_partitions, delete_facts, deposit_fact, event_kind,
     load_event_page, load_events, next_month, pending_facts,
 };
-pub use memberships::{
-    Membership, ORG_IS_SUSPENDED, forget_memberships_before, memberships_of, record_membership,
-};
-pub use persons::{
-    PersonToken, forget_permissions_before, forget_person_token, forget_tokens_without_session,
-    keep_person_token, lock_person_token, person_synced_at, readable_repos, record_person_sync,
-    record_repo_permission, repo_permission_of,
-};
 use secrecy::{ExposeSecret, SecretString};
-pub use sessions::{
-    CLI_SESSION_IDLE_LIFETIME, NewSession, SessionClient, SessionGrant, authenticate_session,
-    create_session, csrf_token, delete_session, delete_session_by_id, delete_sessions_of,
-    new_cli_session_secret, new_session_secret, new_sign_in_secret,
-};
+pub use secret::{draw_secret_bytes, secret_hash};
 use sqlx::migrate::{MigrateError, Migrator};
 use sqlx::postgres::PgPoolOptions;
 pub use sqlx::{PgPool, Postgres, Transaction};
-pub use tokens::{
-    ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
-};
-pub use users::{UserProfile, ensure_user, profile_of, record_avatar, record_profile};
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
@@ -95,7 +72,8 @@ pub enum StoreError {
 }
 
 impl StoreError {
-    fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
+    /// The error of a row that does not match `cihub-domain`.
+    pub fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
         what: &'static str,
         id: &str,
     ) -> impl FnOnce(E) -> Self {
