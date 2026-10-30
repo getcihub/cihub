@@ -152,10 +152,17 @@ async fn status(
     if hosts.is_empty() {
         bail!("not signed in to any host: run `cihub auth login --hostname <host>`");
     }
+    // With several hosts, none of them is the host of the command.
+    let is_host_of_command = hosts.len() == 1;
 
     let mut is_every_token_valid = true;
     for host in &hosts {
-        let Some((token, source)) = credentials.token(host)? else {
+        let found = if is_host_of_command {
+            credentials.token(host)?
+        } else {
+            credentials.file_token(host)?
+        };
+        let Some((token, source)) = found else {
             writeln!(out, "{host}: not signed in")?;
             is_every_token_valid = false;
             continue;

@@ -46,22 +46,32 @@ impl Credentials {
         serde_json::from_str(&text).with_context(|| format!("{} is not valid", path.display()))
     }
 
+    /// Writes a new file, then renames it over the old one: a stop halfway
+    /// leaves the old file whole, and the file that holds the tokens is never
+    /// readable by another user, even when the old one was.
     pub(crate) fn save(&self) -> anyhow::Result<PathBuf> {
         let path = path()?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("cannot create {}", dir.display()))?;
         }
+        let draft = path.with_extension("json.new");
 
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
         let mut file = options
-            .open(&path)
-            .with_context(|| format!("cannot write {}", path.display()))?;
-
+            .open(&draft)
+            .with_context(|| format!("cannot write {}", draft.display()))?;
+        // `mode` applies only to a new file: a draft left by a stop may exist.
+        #[cfg(unix)]
+        file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
         std::io::Write::write_all(&mut file, serde_json::to_string_pretty(self)?.as_bytes())?;
+        file.sync_all()?;
+
+        std::fs::rename(&draft, &path)
+            .with_context(|| format!("cannot write {}", path.display()))?;
         Ok(path)
     }
 
@@ -106,7 +116,8 @@ impl Credentials {
         }
     }
 
-    /// The token of `host`: `CIHUB_TOKEN`, else the session of the file.
+    /// The token of `host`, the host of the command: `CIHUB_TOKEN`, else the
+    /// session of the file.
     pub(crate) fn token(&self, host: &str) -> anyhow::Result<Option<(SecretString, TokenSource)>> {
         if let Some(token) = std::env::var(TOKEN_VARIABLE)
             .ok()
@@ -115,6 +126,16 @@ impl Credentials {
             return Ok(Some((token.into(), TokenSource::Variable)));
         }
 
+        self.file_token(host)
+    }
+
+    /// The token that the file keeps for `host`. `CIHUB_TOKEN` is for the
+    /// host of the command only: sent to every host of the file, it would
+    /// reach hosts that it does not belong to.
+    pub(crate) fn file_token(
+        &self,
+        host: &str,
+    ) -> anyhow::Result<Option<(SecretString, TokenSource)>> {
         let Some(session) = self.session(host) else {
             return Ok(None);
         };

@@ -149,7 +149,7 @@ The command line is the `cihub` binary (crate `cihub-cli`), which a person or a 
 | `cihub auth status [--hostname <host>] [--show-token]` | the hosts, who is signed in on each and where the token comes from; exits with 1 when a token does not work |
 | `cihub auth token [--hostname <host>]`           | prints the token of the host, for a script                                                             |
 
-The host is `--hostname`, else `CIHUB_HOST`, else the only host that the command line knows; there is no default host. The address of a host is `https://<host>`, or `http://` for a loopback host (`localhost`, `127.0.0.1`, `[::1]`, with a port or not). The command line keeps a session per host in `$XDG_CONFIG_HOME/cihub/credentials.json` (mode 0600). `CIHUB_TOKEN` takes precedence over the file: a CI sets `CIHUB_HOST` and `CIHUB_TOKEN`, with an API token of the organization.
+The host is `--hostname`, else `CIHUB_HOST`, else the only host that the command line knows; there is no default host. The address of a host is `https://<host>`, or `http://` for a loopback host (`localhost`, `127.0.0.1`, `[::1]`, with a port or not). The command line keeps a session per host in `$XDG_CONFIG_HOME/cihub/credentials.json` (mode 0600). `CIHUB_TOKEN` takes precedence over the file, for the host of the command only: `cihub auth status` over several hosts sends each one the token of the file. A CI sets `CIHUB_HOST` and `CIHUB_TOKEN`, with an API token of the organization.
 
 | Command                                                  | Role                                                     | Scope          |
 | -------------------------------------------------------- | -------------------------------------------------------- | -------------- |
