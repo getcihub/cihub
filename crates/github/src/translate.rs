@@ -72,7 +72,7 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
                 status: check_run_status(&read.text("/check_run/status")?),
                 conclusion: payload["check_run"]["conclusion"]
                     .as_str()
-                    .and_then(|conclusion| conclusion.parse().ok()),
+                    .map(check_conclusion),
                 details_url: payload["check_run"]["details_url"]
                     .as_str()
                     .map(str::to_owned),
@@ -153,6 +153,21 @@ pub(crate) fn check_run_status(status: &str) -> CheckStatus {
         "completed" => CheckStatus::Completed,
         "in_progress" => CheckStatus::InProgress,
         _ => CheckStatus::Queued,
+    }
+}
+
+/// The conclusion of a check run, in either case. A conclusion that CIHub
+/// does not know, such as `startup_failure`, is a failure.
+pub(crate) fn check_conclusion(conclusion: &str) -> CheckConclusion {
+    match conclusion.to_ascii_lowercase().as_str() {
+        "success" => CheckConclusion::Success,
+        "neutral" => CheckConclusion::Neutral,
+        "skipped" => CheckConclusion::Skipped,
+        "cancelled" => CheckConclusion::Cancelled,
+        "timed_out" => CheckConclusion::TimedOut,
+        "action_required" => CheckConclusion::ActionRequired,
+        "stale" => CheckConclusion::Stale,
+        _ => CheckConclusion::Failure,
     }
 }
 
@@ -546,6 +561,23 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn an_unknown_conclusion_of_a_check_run_is_a_failure() {
+        let check_run = json!({
+            "repository": { "id": 7 },
+            "check_run": {
+                "name": "ci", "head_sha": "abc", "status": "completed",
+                "conclusion": "startup_failure",
+            },
+        });
+
+        let ScmEvent::CheckChanged { check, .. } = event("check_run", &check_run) else {
+            panic!("not a check change");
+        };
+
+        assert_eq!(check.conclusion, Some(CheckConclusion::Failure));
     }
 
     #[test]

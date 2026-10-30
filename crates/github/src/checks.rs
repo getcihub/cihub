@@ -1,7 +1,7 @@
 //! The checks of a commit and the commit statuses that CIHub sets: the
 //! check runs and statuses of GitHub as neutral check reports.
 
-use cihub_domain::{CheckConclusion, CheckKind, CheckReport, CheckStatus, JobClass};
+use cihub_domain::{CheckKind, CheckReport, CheckStatus, JobClass};
 use cihub_scm::{CommitStatus, RepoRef, ScmError, StatusUpdate};
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 use crate::GithubApp;
 use crate::client::encode;
 use crate::graphql::{Nodes, decode};
-use crate::translate::{check_run_status, status_report};
+use crate::translate::{check_conclusion, check_run_status, status_report};
 
 /// The GraphQL fragment that reads the checks and the statuses of a commit.
 pub(crate) const CHECKS_FRAGMENT: &str = "
@@ -62,21 +62,6 @@ enum Context {
         #[serde(with = "time::serde::rfc3339::option")]
         created_at: Option<OffsetDateTime>,
     },
-}
-
-/// The conclusion of a check run of GraphQL; one that CIHub does not know is
-/// a failure.
-fn check_conclusion(conclusion: &str) -> CheckConclusion {
-    match conclusion {
-        "SUCCESS" => CheckConclusion::Success,
-        "NEUTRAL" => CheckConclusion::Neutral,
-        "SKIPPED" => CheckConclusion::Skipped,
-        "CANCELLED" => CheckConclusion::Cancelled,
-        "TIMED_OUT" => CheckConclusion::TimedOut,
-        "ACTION_REQUIRED" => CheckConclusion::ActionRequired,
-        "STALE" => CheckConclusion::Stale,
-        _ => CheckConclusion::Failure,
-    }
 }
 
 /// The check reports of a rollup; none without a rollup.
