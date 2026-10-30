@@ -34,9 +34,9 @@ impl Rate {
     fn share(self) -> f64 {
         if self.limit == 0 {
             return 1.0;
-        } else {
-            f64::from(self.remaining) / f64::from(self.limit)
         }
+
+        f64::from(self.remaining) / f64::from(self.limit)
     }
 }
 
