@@ -38,7 +38,7 @@ cihub-web.workspace = true
 cihub-scm = { workspace = true, features = ["sim"] }
 cihub-telemetry = { workspace = true, features = ["capture"] }
 secrecy.workspace = true
-tokio = { workspace = true, features = ["macros", "net", "rt"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 ulid.workspace = true
 
 [lints]

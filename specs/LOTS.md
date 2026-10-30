@@ -43,6 +43,7 @@ configuration checker, in phase 1).
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 9b  | Conditions status of a PR                              | 2     | 9          | —         | in progress (budget not measured)        |
+| 9c  | Command line: output and watch                         | 2     | 9, 10d     | —         | in progress                              |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | done                                     |
@@ -74,6 +75,7 @@ flowchart LR
   L10b --> L10c[10c PR and actions]
   L10b --> L10d[10d Live]
   L9 --> L9b[9b Conditions]
+  L10d --> L9c[9c CLI output]
   L9 --> L11a[11a Analytics]
   L11a --> L11b[11b Prometheus]
   L11a --> L11c[11c Webhooks]
@@ -86,7 +88,8 @@ flowchart LR
 ```
 
 Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 9b, 10a, 11a, 12
-and 14 after lot 9, lots 10c and 10d after lot 10b, and lots 11b and 11c after lot 11a.
+and 14 after lot 9, lots 10c and 10d after lot 10b, lot 9c after lot 10d, and lots 11b and 11c after lot
+11a.
 
 ---
 
@@ -298,6 +301,54 @@ Decisions (October 14, 2026, validated by the project lead):
     `BlockReason::AwaitingRequiredCheck` is a closed enumeration, `AwaitedCheckStatus` (`missing` while the
     check has not reported, then `queued` or `running` after its `CheckStatus`), with a sentence for each value,
     rather than a free string; it changes the event log and the API.
+
+### Lot 9c: the command line: output and watch
+
+Decisions (October 29, 2026, validated by the project lead):
+
+- `cihub app create` and the manifest flow of `cihub-github` are removed: the command line talks to the public
+  API of an instance only (`specs/LESSONS.md`).
+- The output follows the principles of the command lines that people already know (a table in a terminal, plain
+  columns in a pipe), without taking their flags or their formats (`specs/COMPETITION.md`).
+- Colors are written by hand, without a dependency; `NO_COLOR` turns them off.
+- `cihub queue watch` follows the stream of the organization (`GET /orgs/{org}/stream`) and reads again on each
+  `queue_changed` of its queue; after `429 too_many_streams`, it reads every 10 seconds instead.
+
+- **Goal**: a person or a CI reads the state of a queue or of a PR from a terminal, and follows a PR until it ends.
+- **Content**: an `output` module of `cihub-cli`, which receives from `main` whether the output is a terminal: in
+  a terminal, a table with a header, colors and relative durations; in a pipe, columns separated by tabs, without
+  a header or colors, with RFC 3339 dates. `--json` on every `cihub queue` command that reads, which writes the
+  types of `cihub-api-types` as they are. The block reasons and the states as sentences of `specs/DOMAIN.md`, never as
+  JSON. `cihub queue watch <pr>`: the state of the PR, drawn again on each change in a terminal, one line per
+  change in a pipe; it ends with the PR, exit code 0 for `merged`, 1 for `failed` or `cancelled`.
+  `cihub queue watch` without a PR follows the table of the queue until it is interrupted. The reading of the
+  stream in `cihub-client`, with `reqwest::Response::chunk`.
+- **Frozen interfaces**: the table of `cihub queue status`, `POS`, `PR`, `TITLE`, `STATE`, `SINCE` in a terminal,
+  and in a pipe the number, the state, the position (empty outside the queue), the title and the time of the
+  state; `--json`; the exit codes of `cihub queue watch`.
+- **Exit criterion**: the output of `cihub queue status`, `cihub queue status <pr>` and `cihub auth status`, in a
+  terminal and in a pipe, from fixed answers of the API, with and without `NO_COLOR`; against Postgres and the
+  simulator, a watch of a submitted PR sees it reach `merged` and ends with 0, a watch of a PR that fails ends
+  with 1, and a watch that gets `429 too_many_streams` still sees the end of its PR.
+- **Tracking**:
+  - Done (October 29, 2026): `cihub app create` and `crates/github/src/manifest.rs` are removed, with their
+    documentation. `CIHUB_TOKEN` reaches only the host of the command; the file of the sessions is written to a
+    new file, then renamed, readable by its owner only (`crates/cli/tests/auth.rs`).
+  - Done (October 30, 2026): the `output` module of `cihub-cli`, `--json` on `cihub queue status|watch|graph`,
+    `cihub queue watch [<pr>]`, and the new table of `cihub auth status`. The sentences of the block reasons move
+    from `cihub-mergequeue` to `BlockReason::describe` in `cihub-domain`, next to `Reason::describe`, so that the
+    command line and the PR comment say the same thing. `cihub-client` reads the stream (`Client::stream`), waits
+    for the changes of one queue (`QueueWatch`) and follows a PR (`Client::follow_pr`), so that a test against
+    Postgres covers the watch without the binary; it takes `tokio` (`time`) for the poll and for a stream that stays
+    silent past the pings, and `deny.toml` lets it. An ended PR shows no position: it keeps the one that it had.
+  - Exit criterion: `a_terminal_shows_the_queue_as_a_table_under_its_summary`,
+    `a_pipe_gets_the_rows_of_the_queue_alone`, `a_pr_shows_its_state_and_what_blocks_it`,
+    `the_status_is_a_table_in_a_terminal_and_rows_in_a_pipe` and the tests of `output.rs`, in `cihub-cli`;
+    `a_watch_follows_a_pr_until_it_ends` against Postgres and the simulator, in `cihub-mergequeue` (`merged`, then
+    `failed` after its runs fail, then `merged` again by polling once the server refuses a ninth stream). Tested
+    by hand on `cihub-dev` (`getcihub/testing`, PR #58), in a terminal and in a pipe.
+  - Remaining: the redraw of a watch counts the lines of its text; a line wider than the terminal wraps, and the
+    next redraw leaves its first part on the screen.
 
 ### Lots 10a to 10d: dashboard
 

@@ -3,7 +3,7 @@
 //! (`specs/API.md`); `logout` ends the session; `status` checks each token;
 //! `token` prints one, for a script.
 
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -16,6 +16,7 @@ use secrecy::{ExposeSecret, SecretString};
 use crate::credentials::{
     Credentials, HOST_VARIABLE, HostSession, TOKEN_VARIABLE, TokenSource, address,
 };
+use crate::output::{Cell, Color, Style};
 
 #[derive(Args)]
 #[command(arg_required_else_help = true)]
@@ -55,18 +56,18 @@ enum AuthCommand {
 /// (RFC 8628, section 3.5).
 const SLOW_DOWN: Duration = Duration::from_secs(5);
 
-pub(crate) async fn run(out: &mut impl Write, args: AuthArgs) -> anyhow::Result<()> {
+pub(crate) async fn run(out: &mut impl Write, style: Style, args: AuthArgs) -> anyhow::Result<()> {
     match args.command {
-        AuthCommand::Login(host) => login(out, host.hostname.as_deref()).await,
+        AuthCommand::Login(host) => login(out, style, host.hostname.as_deref()).await,
         AuthCommand::Logout(host) => logout(out, host.hostname.as_deref()).await,
         AuthCommand::Status { host, show_token } => {
-            status(out, host.hostname.as_deref(), show_token).await
+            status(out, style, host.hostname.as_deref(), show_token).await
         }
         AuthCommand::Token(host) => token(out, host.hostname.as_deref()),
     }
 }
 
-async fn login(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<()> {
+async fn login(out: &mut impl Write, style: Style, hostname: Option<&str>) -> anyhow::Result<()> {
     let mut credentials = Credentials::load()?;
     let host = credentials.host(hostname)?;
     let client = Client::anonymous(&address(&host))?;
@@ -79,7 +80,7 @@ async fn login(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<(
         "To sign in, open this address (it expires in {minutes} minutes):\n\n  {link}\n\n\
          and type this code:\n\n  {user_code}",
         minutes = code.expires_in / 60,
-        link = hyperlink(&code.verification_url, std::io::stdout().is_terminal()),
+        link = hyperlink(&code.verification_url, style.is_terminal),
         user_code = code.user_code,
     )?;
     let mut interval = Duration::from_secs(code.interval);
@@ -140,6 +141,7 @@ async fn logout(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<
 
 async fn status(
     out: &mut impl Write,
+    style: Style,
     hostname: Option<&str>,
     show_token: bool,
 ) -> anyhow::Result<()> {
@@ -155,41 +157,93 @@ async fn status(
     // With several hosts, none of them is the host of the command.
     let is_host_of_command = hosts.len() == 1;
 
-    let mut is_every_token_valid = true;
-    for host in &hosts {
+    let mut sessions = Vec::new();
+    for host in hosts {
         let found = if is_host_of_command {
-            credentials.token(host)?
+            credentials.token(&host)?
         } else {
-            credentials.file_token(host)?
+            credentials.file_token(&host)?
         };
-        let Some((token, source)) = found else {
-            writeln!(out, "{host}: not signed in")?;
-            is_every_token_valid = false;
-            continue;
-        };
-        let from = match &source {
-            TokenSource::Variable => TOKEN_VARIABLE.to_owned(),
-            TokenSource::File(path) => path.display().to_string(),
-        };
-        let state = match who(host, &token).await {
-            Ok(who) => who,
-            Err(err) => {
-                is_every_token_valid = false;
-                format!("the token does not work: {err:#}")
-            }
-        };
-
-        writeln!(out, "{host}: {state} (token from {from})")?;
-        if show_token {
-            writeln!(out, "  token: {}", token.expose_secret())?;
-        }
+        sessions.push(check_session(host, found, show_token).await);
     }
 
-    if !is_every_token_valid {
+    out.write_all(status_view(style, &sessions, show_token).as_bytes())?;
+    if sessions.iter().any(|session| !session.is_valid) {
         bail!("a token does not work");
     }
 
     Ok(())
+}
+
+/// What `cihub auth status` says of a host.
+struct SessionStatus {
+    host: String,
+    state: String,
+    is_valid: bool,
+    token_from: String,
+    token: Option<String>,
+}
+
+async fn check_session(
+    host: String,
+    found: Option<(SecretString, TokenSource)>,
+    show_token: bool,
+) -> SessionStatus {
+    let Some((token, source)) = found else {
+        return SessionStatus {
+            host,
+            state: "not signed in".to_owned(),
+            is_valid: false,
+            token_from: String::new(),
+            token: None,
+        };
+    };
+    let token_from = match &source {
+        TokenSource::Variable => TOKEN_VARIABLE.to_owned(),
+        TokenSource::File(path) => path.display().to_string(),
+    };
+    let (state, is_valid) = match who(&host, &token).await {
+        Ok(who) => (who, true),
+        Err(err) => (format!("the token does not work: {err:#}"), false),
+    };
+
+    SessionStatus {
+        host,
+        state,
+        is_valid,
+        token_from,
+        token: show_token.then(|| token.expose_secret().to_owned()),
+    }
+}
+
+/// The hosts as a table: `HOST`, `STATE`, `TOKEN FROM`, then `TOKEN` with
+/// `--show-token`.
+fn status_view(style: Style, sessions: &[SessionStatus], show_token: bool) -> String {
+    let mut header = vec!["HOST", "STATE", "TOKEN FROM"];
+    if show_token {
+        header.push("TOKEN");
+    }
+    let rows: Vec<Vec<Cell>> = sessions
+        .iter()
+        .map(|session| {
+            let color = if session.is_valid {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            let mut row = vec![
+                Cell::plain(session.host.clone()),
+                Cell::painted(session.state.clone(), Some(color)),
+                Cell::plain(session.token_from.clone()),
+            ];
+            if show_token {
+                row.push(Cell::plain(session.token.clone().unwrap_or_default()));
+            }
+            row
+        })
+        .collect();
+
+    style.table(&header, &rows)
 }
 
 /// Who the token of `host` stands for: a person, or an organization for an
@@ -230,6 +284,45 @@ fn hyperlink(address: &str, is_terminal: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sessions() -> Vec<SessionStatus> {
+        vec![
+            SessionStatus {
+                host: "a.example.com".into(),
+                state: "signed in as ada".into(),
+                is_valid: true,
+                token_from: "/home/ada/.config/cihub/credentials.json".into(),
+                token: Some("chc_a".into()),
+            },
+            SessionStatus {
+                host: "b.example.com".into(),
+                state: "not signed in".into(),
+                is_valid: false,
+                token_from: String::new(),
+                token: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn the_status_is_a_table_in_a_terminal_and_rows_in_a_pipe() {
+        assert_eq!(
+            status_view(Style::new(true, true), &sessions(), false),
+            "HOST           STATE             TOKEN FROM\n\
+             a.example.com  signed in as ada  /home/ada/.config/cihub/credentials.json\n\
+             b.example.com  not signed in     \n"
+        );
+        assert!(
+            status_view(Style::new(true, false), &sessions(), false)
+                .contains("\x1b[31mnot signed in\x1b[0m"),
+            "a host without a valid token is red"
+        );
+        assert_eq!(
+            status_view(Style::new(false, false), &sessions(), true),
+            "a.example.com\tsigned in as ada\t/home/ada/.config/cihub/credentials.json\tchc_a\n\
+             b.example.com\tnot signed in\t\t\n"
+        );
+    }
 
     #[test]
     fn a_terminal_gets_a_link_and_a_script_the_address() {

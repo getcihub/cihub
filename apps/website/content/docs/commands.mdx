@@ -89,7 +89,17 @@ queue of the default branch; add `--branch release/2.0` for another one.
 ```sh
 cihub queue status        # the queue of the default branch
 cihub queue status 123    # one pull request: its state, its reason, its position
+cihub queue watch 123     # follows the pull request until it merges or fails
+cihub queue watch         # follows the queue, until Ctrl-C
 cihub queue graph         # the pull requests in the queue, and what each one is tested on top of
+```
+
+In a terminal, the commands write a table with colors; in a pipe, the rows alone, separated by tabs, for a script.
+`--json` writes what the API gives. `NO_COLOR=1` turns the colors off. `cihub queue watch 123` ends with the pull
+request: exit code 0 when it merges, 1 when it fails or is cancelled, so that a CI job can wait for the merge:
+
+```sh
+cihub queue merge 123 && cihub queue watch 123
 ```
 
 Every `cihub queue` command finds the repository from the `origin` remote of git; `--repo acme/web` names another

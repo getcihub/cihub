@@ -4464,6 +4464,120 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     q.stop().await;
 }
 
+/// `cihub queue watch`: the client follows a PR on the stream of the
+/// organization until it merges or fails, and reads it every `poll_every`
+/// while the server refuses one more stream.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_watch_follows_a_pr_until_it_ends(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let client =
+        cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token)).unwrap();
+    let repo_path = cihub_client::RepoPath {
+        org: "acme",
+        repo: "app",
+    };
+    let no_poll = std::time::Duration::from_secs(3600);
+
+    let merged = submit_new_pr(&sim, &main, 1);
+    q.deliver().await;
+    q.settle().await;
+    let mut seen = Vec::new();
+    let (ended, ()) = within_a_minute(async {
+        tokio::join!(
+            client.follow_pr(repo_path, merged, no_poll, |pr| seen.push(pr.state)),
+            end_run(&mut q, true)
+        )
+    })
+    .await;
+
+    assert_eq!(ended.unwrap().state, ItemState::Merged);
+    assert_eq!(seen.first(), Some(&ItemState::Testing));
+
+    let failed = submit_new_pr(&sim, &main, 2);
+    q.deliver().await;
+    q.settle().await;
+    let (ended, ()) = within_a_minute(async {
+        tokio::join!(
+            client.follow_pr(repo_path, failed, no_poll, |_| {}),
+            fail_runs(&mut q)
+        )
+    })
+    .await;
+
+    assert_eq!(ended.unwrap().state, ItemState::Failed);
+
+    // The server keeps 8 streams per token, and counts the ones of the
+    // watches above until it writes to them again: once it refuses one more,
+    // the next watch reads the PR every 50 ms instead.
+    let mut streams = Vec::new();
+    let refused = loop {
+        match client.stream("acme").await {
+            Ok(stream) => streams.push(stream),
+            Err(err) => break err,
+        }
+    };
+
+    assert!(
+        matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::TooManyStreams),
+        "{refused}"
+    );
+
+    let polled = submit_new_pr(&sim, &main, 3);
+    q.deliver().await;
+    q.settle().await;
+    let (ended, ()) = within_a_minute(async {
+        tokio::join!(
+            client.follow_pr(
+                repo_path,
+                polled,
+                std::time::Duration::from_millis(50),
+                |_| {}
+            ),
+            end_run(&mut q, true)
+        )
+    })
+    .await;
+
+    assert_eq!(ended.unwrap().state, ItemState::Merged);
+    drop(streams);
+    q.stop().await;
+}
+
+/// Ends the first run in progress with the required check, then lets the
+/// queue act on it.
+async fn end_run(q: &mut SimQueue, passed: bool) {
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+    q.sim
+        .report_check(&repo(), &test_sha, check(REQUIRED, passed))
+        .unwrap();
+    for _ in 0..2 {
+        q.deliver().await;
+        q.settle().await;
+    }
+}
+
+/// Fails each run of the queue until none tests: a failed run can be run
+/// again before its PR fails.
+async fn fail_runs(q: &mut SimQueue) {
+    while !q.runs_in_progress().await.is_empty() {
+        end_run(q, false).await;
+    }
+}
+
+/// `work`, or a failed test when it takes more than a minute.
+async fn within_a_minute<T>(work: impl Future<Output = T>) -> T {
+    tokio::time::timeout(std::time::Duration::from_mins(1), work)
+        .await
+        .unwrap()
+}
+
 /// A reconciliation that writes the log tells the pages that its queue
 /// changed, with the last sequence number of the log.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

@@ -393,13 +393,15 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
 
     assert!(drained.status.success(), "{stdout}");
     assert_eq!(
-        stdout, "queue of `main`: \"draining\" asked\n",
+        stdout, "queue of `main`: drain asked\n",
         "without `--branch`, the queue of the default branch"
     );
-    let status = cihub(&["status", "--branch", "release/1"]);
-    let stdout = String::from_utf8_lossy(&status.stdout);
+    let status = cihub(&["status", "--branch", "release/1", "--json"]);
+    let read: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
 
-    assert_eq!(stdout, "queue of `release/1`: running\n");
+    assert_eq!(read["queue"]["target_branch"], "release/1");
+    assert_eq!(read["queue"]["state"], "running");
+    assert_eq!(read["prs"], serde_json::json!([]));
     stop(child);
 }
 
