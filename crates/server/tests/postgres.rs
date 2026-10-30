@@ -503,7 +503,7 @@ async fn the_command_line_signs_in_with_a_code_that_its_person_approves(pool: Pg
 
     assert!(
         String::from_utf8_lossy(&status.stdout)
-            .starts_with(&format!("{public}: signed in as ada (token from ")),
+            .starts_with(&format!("{public}\tsigned in as ada\t")),
         "{}",
         String::from_utf8_lossy(&status.stdout)
     );
