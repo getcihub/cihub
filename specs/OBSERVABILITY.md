@@ -30,12 +30,13 @@ A `web` replica that loses its connection to `cihub_queue_changed` writes `warn`
 
 ### Format
 
-In `json`, a record is one line, in the JSON format of `tracing-subscriber`. The fields of the event are
-at the top level; the open spans are in the `spans` list, from the root to the leaf, each with its name and
-its correlation keys. A query on a queue therefore reads `spans[].queue_id`:
+In `json`, a record is one flat JSON object on one line. The fields of the event and the fields of all the
+open spans are at the top level, side by side: a query on a queue reads `queue_id`, whatever the span that
+carries it. When two give the same field, the event wins, then the span closest to the event. The record
+has no list, because the `json` parser of Loki skips the arrays:
 
 ```json
-{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","message":"group formed","predecessors":2,"target":"cihub_mergequeue::reconcile","spans":[{"name":"role","role":"scheduler"},{"name":"reconcile","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk"}]}
+{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","message":"group formed","predecessors":2,"target":"cihub_mergequeue::reconcile","role":"scheduler","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk"}
 ```
 
 `timestamp` is in RFC 3339 UTC, in milliseconds; `level` is `DEBUG`, `INFO`, `WARN` or `ERROR`; `target` is
@@ -94,8 +95,9 @@ carry the mention _lint_; review checks the others.
 10. **The logs do not replace the timeline.** The event timeline says why an item changed
     state; the logs say what the process did. An information that a customer needs goes in an
     event with its reason (`specs/DOMAIN.md`), never only in a log.
-11. **The tests do not write to standard output.** A test that checks a log installs a local subscriber
-    (`tracing::subscriber::with_default`) that writes to a buffer.
+11. **The tests do not write to standard output.** A test that checks a log installs the subscriber of
+    `cihub_telemetry::CapturedLogs` (feature `capture`, in the dev-dependencies) (`tracing::subscriber::with_default`, or `set_default` in an async
+    test), which keeps the lines of the `json` format in memory, then reads its `records`.
 
 ## Alerts and dashboards
 

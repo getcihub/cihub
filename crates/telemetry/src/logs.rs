@@ -3,7 +3,10 @@ use std::error::Error;
 use time::macros::format_description;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::ParseError;
+use tracing_subscriber::fmt::format::JsonFields;
 use tracing_subscriber::fmt::time::UtcTime;
+
+use crate::flat_json::FlatJson;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogFormat {
@@ -17,6 +20,9 @@ pub enum LogsError {
     InvalidFilter(#[source] ParseError),
     #[error("a global subscriber is already installed")]
     AlreadyInstalled(#[source] Box<dyn Error + Send + Sync>),
+    #[cfg(any(test, feature = "capture"))]
+    #[error("a captured log line is not a JSON object")]
+    InvalidRecord(#[source] serde_json::Error),
 }
 
 #[derive(Debug)]
@@ -49,13 +55,8 @@ impl Logs {
         let builder = tracing_subscriber::fmt().with_env_filter(self.filter);
         match self.format {
             LogFormat::Json => builder
-                .json()
-                .flatten_event(true)
-                .with_current_span(false)
-                .with_span_list(true)
-                .with_timer(UtcTime::new(format_description!(
-                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-                )))
+                .fmt_fields(JsonFields::new())
+                .event_format(FlatJson::new())
                 .try_init(),
             LogFormat::Pretty => builder
                 .compact()
