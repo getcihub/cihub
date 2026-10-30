@@ -8,4 +8,17 @@ export const base = [
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
   reactHooks.configs.flat["recommended-latest"],
+  {
+    rules: {
+      // `any` is already an error (`strictTypeChecked`); `unknown` hides a type as well. A value whose type cannot
+      // be known (a thrown value, a JSON of no schema) keeps it with a disable comment that says why.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSUnknownKeyword",
+          message: "Name the type; `unknown` only where it cannot be known, with a comment that says why.",
+        },
+      ],
+    },
+  },
 ];

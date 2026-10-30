@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { client } from "@/client/client.gen";
 import type { QueueList } from "@/client/types.gen";
-import { type ReadKey, readKeyOf } from "@/domain/read-key";
+import { type Operation, type ReadKey, readKeyOf } from "@/domain/read-key";
 import { orgQueuesOptions } from "./queries";
 
 /** The event `queue_changed` of the stream of an organization. */
@@ -63,7 +63,7 @@ function readOrgAgain(queryClient: QueryClient, org: string): Promise<void> {
 function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<string>): Promise<void> {
   const queues = queryClient.getQueryData<QueueList>(orgQueuesOptions(org).queryKey);
   const changed = queues?.queues.filter((entry) => queueIds.has(entry.id)) ?? [];
-  const reads = ["listOrgQueues", "listOrgPrs", "listRepoPrs", "getRun"];
+  const reads: Operation[] = ["listOrgQueues", "listOrgPrs", "listRepoPrs", "getRun"];
   if (changed.length < queueIds.size) {
     reads.push("listRepos", "getRepo");
   }
@@ -75,7 +75,7 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         if (!isReadOfOrg(key, org)) {
           return false;
         }
-        if (reads.includes(key._id ?? "")) {
+        if (key._id && reads.includes(key._id)) {
           return true;
         }
         // The Health reads its facts again on its own timer (`healthOptions`).

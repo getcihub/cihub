@@ -6,8 +6,10 @@ does not also check.
 
 ## Stack (Q9, decided)
 
-- TypeScript in strict mode (`strict`, `noUncheckedIndexedAccess`); no `any`, no non-null assertion `!`, no
-  `@ts-ignore`. Not `exactOptionalPropertyTypes`: the generated client does not compile with it.
+- TypeScript in strict mode (`strict`, `noUncheckedIndexedAccess`); no `any`, no `unknown`, no non-null assertion
+  `!`, no `@ts-ignore`. ESLint refuses `any` and `unknown`; `unknown` stays only where no type can be known (a
+  thrown value, a JSON that the API gives no schema), with a disable comment that says why. Not
+  `exactOptionalPropertyTypes`: the generated client does not compile with it.
 - React, Vite, and the TanStack libraries: Router for the routes, Query for the data of the server, Form for the
   forms. Table only for a table that the client sorts or filters; the server already orders the items.
 - The client of the API is generated from `schema/openapi/v1.json`, the document that `/api/v1/openapi.json` serves,

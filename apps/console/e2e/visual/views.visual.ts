@@ -79,6 +79,7 @@ async function openView(context: BrowserContext, view: View, theme: Theme): Prom
 
         addEventListener = () => undefined;
         close = () => undefined;
+        // eslint-disable-next-line no-restricted-syntax -- a stub that has only the members that the console uses
       } as unknown as typeof EventSource;
     });
   }
@@ -128,6 +129,7 @@ for (const view of VIEWS) {
         if (IS_BASE) {
           context.setDefaultTimeout(BASE_VIEW_TIMEOUT_MS);
         }
+        // eslint-disable-next-line no-restricted-syntax -- a thrown value has no type
         const page = await openView(context, view, theme).catch((error: unknown) => {
           test.skip(IS_BASE, "The build of the base does not show this view.");
           throw error;

@@ -50,7 +50,8 @@ A violation means that the principle or the PR is wrong; never "we will fix it l
 `mise run lint` already refuses: `unwrap`, standard output, the clock or randomness outside their exception, I/O
 crates or `tracing` in the pure crates, `anyhow` outside the two binaries (`cihub-cli`, `cihub-server`),
 `cihub-github` outside `cihub-server` and `cihub-web`, a block nested deeper than `clippy.toml` allows, a crate without its `//!` comment, a cited spec that
-does not exist. When a tool refuses, fix the cause, never the rule. A crate or a directory with its own rules has
+does not exist, `any` or `unknown` in the TypeScript (`unknown` stays only with a comment that says why no type can
+be known). When a tool refuses, fix the cause, never the rule. A crate or a directory with its own rules has
 its own `AGENTS.md`.
 
 - **Neutral, closed vocabulary.** No SCM name outside `cihub-github`. CIHub takes no interface, command or format

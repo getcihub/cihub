@@ -54,12 +54,14 @@ function dotOf(event: Event): string | undefined {
 }
 
 /** The reasons that an `item.readiness_changed` gives; none for another event. */
+// eslint-disable-next-line no-restricted-syntax -- the payload of an event is a JSON that the API gives no schema
 function blockReasonsOf(event: Event): Record<string, unknown>[] {
   const reasons = event.payload.block_reasons;
   if (event.type !== "item.readiness_changed" || !Array.isArray(reasons)) {
     return [];
   }
   return reasons.filter(
+    // eslint-disable-next-line no-restricted-syntax -- the payload of an event is a JSON that the API gives no schema
     (reason): reason is Record<string, unknown> => typeof reason === "object" && reason !== null,
   );
 }

@@ -80,6 +80,7 @@ export function etaOf(pr: Pr): string | null {
 }
 
 /** What keeps a PR out of the queue, as a sentence where a check is a code span; `null` for unmet queue conditions, which the drawer shows one by one. */
+// eslint-disable-next-line no-restricted-syntax -- a block reason is a JSON that the API gives no schema
 export function blockSentence(reason: Record<string, unknown>): string | null {
   const field = (name: string) => String(reason[name]);
   switch (reason.kind) {
