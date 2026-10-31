@@ -3,6 +3,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cihub_api_types::{DEFAULT_LIMIT, ErrorCode, MAX_LIMIT};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use time::OffsetDateTime;
 
 use crate::ApiError;
@@ -82,13 +83,30 @@ fn after_of<K: DeserializeOwned>(list: &str, text: &str) -> Result<K, ApiError> 
         )
     };
     let bytes = URL_SAFE_NO_PAD.decode(text).map_err(|_| invalid())?;
-    let cursor: Cursor<K> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    // Postgres refuses a NUL in a text, so a forged key with one would fail
+    // the query instead of the cursor.
+    if holds_nul(&value) {
+        return Err(invalid());
+    }
+    let cursor: Cursor<K> = serde_json::from_value(value).map_err(|_| invalid())?;
 
     if cursor.list != list {
         return Err(invalid());
     }
 
     Ok(cursor.after)
+}
+
+fn holds_nul(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.contains('\0'),
+        Value::Array(values) => values.iter().any(holds_nul),
+        Value::Object(fields) => fields
+            .iter()
+            .any(|(name, value)| name.contains('\0') || holds_nul(value)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => false,
+    }
 }
 
 /// The cursor that gives the page after the entry whose sort key is `after`,
@@ -136,6 +154,15 @@ mod tests {
             page.ok().and_then(|page| page.after).map(|(at, _)| at.0),
             Some(datetime!(2026-10-11 09:30:00 UTC))
         );
+        assert!(refused.is_err_and(|err| err.code == ErrorCode::InvalidCursor));
+    }
+
+    #[test]
+    fn a_cursor_with_a_nul_character_is_refused() {
+        let forged = cursor_of("prs", ("2026-10-11T09:30:00Z", "item\u{0}1"));
+
+        let refused = Page::<(CursorTime, String)>::read("prs", Some(&forged), None);
+
         assert!(refused.is_err_and(|err| err.code == ErrorCode::InvalidCursor));
     }
 
