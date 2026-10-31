@@ -764,6 +764,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             check_transition(Some(*from), *to, *reason)?;
 
             snapshot.state = *to;
+            snapshot.state_before_access_lost = (*reason == Reason::AccessLost).then_some(*from);
             if *reason == Reason::ModeSwitchCompleted {
                 snapshot.mode = snapshot.requested_mode;
             }
@@ -835,7 +836,9 @@ fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
         )
         .is_ok(),
         Request::AccessLost => snapshot.state != QueueState::Paused,
-        Request::AccessRestored => snapshot.state == QueueState::Paused,
+        Request::AccessRestored => {
+            snapshot.state == QueueState::Paused && snapshot.state_before_access_lost.is_some()
+        }
     }
 }
 

@@ -121,6 +121,9 @@ pub struct Snapshot {
     pub queue_id: QueueId,
     pub target_branch: String,
     pub state: QueueState,
+    /// The state before an `access_lost` paused the queue; `None` when an
+    /// admin paused it, so that `access_restored` leaves that pause alone.
+    pub state_before_access_lost: Option<QueueState>,
     /// The mode in force.
     pub mode: QueueMode,
     /// The mode of the settings; it comes into force after `switching_modes`.
@@ -209,6 +212,7 @@ impl Snapshot {
             queue_id,
             target_branch,
             state: QueueState::Running,
+            state_before_access_lost: None,
             mode,
             requested_mode: mode,
             window: None,

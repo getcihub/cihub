@@ -165,6 +165,9 @@ failed; it waits for an operator).
 States (`QueueState`): `running` accepts and merges; `paused` decides nothing and merges nothing but keeps
 the order, and a submission there waits for the resume; `draining` lets what is in flight merge and
 refuses a new submission, whose item is created `cancelled` with the reason `queue_draining`;
+a lost access (`access_lost`) pauses a `running`, `draining` or `switching_modes` queue and remembers the state
+before; `access_restored` gives that state back (`draining`, else `running`) and does nothing to a queue that an admin
+paused, or that never lost its access; `resume` by an admin ends the pause whatever its cause;
 `switching_modes` is reached automatically when the mode changes with items in flight and behaves like
 `draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`

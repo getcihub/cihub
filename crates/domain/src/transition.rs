@@ -228,6 +228,7 @@ impl Lifecycle for QueueState {
                 &[R::AdminRequested, R::AccessLost]
             }
             (Some(S::Paused), S::Running) => &[R::AdminRequested, R::AccessRestored],
+            (Some(S::Paused), S::Draining) => &[R::AccessRestored],
             (Some(S::Running), S::Draining) | (Some(S::Draining), S::Running) => {
                 &[R::AdminRequested]
             }
@@ -522,6 +523,7 @@ mod tests {
                 S::Running,
                 &["admin_requested", "access_restored"],
             ),
+            (&[Some(S::Paused)], S::Draining, &["access_restored"]),
             (&[Some(S::Running)], S::Draining, &["admin_requested"]),
             (&[Some(S::Draining)], S::Running, &["admin_requested"]),
             (&[Some(S::Running)], S::SwitchingModes, &["mode_changed"]),

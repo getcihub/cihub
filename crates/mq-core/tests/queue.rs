@@ -8,10 +8,11 @@ use cihub_config::Setting;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, EventKind, ItemState,
     JobError, Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason,
-    RunStatus,
+    RunStatus, UserId,
 };
 use cihub_mq_core::{CheckRead, Head, Outcome, Read};
 use common::{World, head, settings, transitioned, window};
+use ulid::Ulid;
 
 fn world() -> World {
     World::new(settings(window(2)))
@@ -703,7 +704,68 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_eq!(w.snapshot.state, QueueState::Paused);
 
     w.fact(Actor::System, EventKind::AccessRestored);
+    assert_eq!(w.snapshot.state, QueueState::Draining);
+
+    assert_replays(&w);
+}
+
+#[test]
+fn access_restored_on_a_queue_that_never_lost_access_changes_nothing() {
+    let mut w = world();
+
+    assert_eq!(
+        w.fact(Actor::System, EventKind::AccessRestored),
+        Outcome::Ignored
+    );
     assert_eq!(w.snapshot.state, QueueState::Running);
+
+    w.fact(
+        Actor::System,
+        EventKind::QueueControlRequested {
+            control: QueueControl::Drain,
+        },
+    );
+    w.fact(Actor::System, EventKind::AccessRestored);
+    assert_eq!(w.snapshot.state, QueueState::Draining);
+
+    assert_replays(&w);
+}
+
+#[test]
+fn access_restored_keeps_an_admin_pause() {
+    let mut w = world();
+    let admin = Actor::User {
+        user_id: UserId::from_ulid(Ulid(1)),
+    };
+    w.fact(
+        admin,
+        EventKind::QueueControlRequested {
+            control: QueueControl::Pause,
+        },
+    );
+    assert_eq!(w.snapshot.state, QueueState::Paused);
+
+    w.fact(Actor::System, EventKind::AccessLost);
+    w.fact(Actor::System, EventKind::AccessRestored);
+    assert_eq!(w.snapshot.state, QueueState::Paused);
+
+    assert_replays(&w);
+}
+
+#[test]
+fn access_lost_then_restored_keeps_a_drain() {
+    let mut w = world();
+    w.fact(
+        Actor::System,
+        EventKind::QueueControlRequested {
+            control: QueueControl::Drain,
+        },
+    );
+    assert_eq!(w.snapshot.state, QueueState::Draining);
+
+    w.fact(Actor::System, EventKind::AccessLost);
+    w.fact(Actor::System, EventKind::AccessRestored);
+    assert_eq!(w.snapshot.state, QueueState::Draining);
 
     assert_replays(&w);
 }

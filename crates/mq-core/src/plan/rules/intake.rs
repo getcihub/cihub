@@ -108,7 +108,16 @@ pub(in crate::plan) fn requests(
         }
         Request::Control(control) => queue_to(s, control.target(), Reason::AdminRequested),
         Request::AccessLost => queue_to(s, QueueState::Paused, Reason::AccessLost),
-        Request::AccessRestored => queue_to(s, QueueState::Running, Reason::AccessRestored),
+        Request::AccessRestored => {
+            // A queue that was switching modes restarts in `running`, which
+            // switches again when the modes still differ.
+            let to = match s.state_before_access_lost {
+                Some(QueueState::Draining) => QueueState::Draining,
+                _ => QueueState::Running,
+            };
+
+            queue_to(s, to, Reason::AccessRestored)
+        }
     };
     Step::one(Some(*id), kind)
 }
