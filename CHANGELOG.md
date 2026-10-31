@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/getcihub/cihub/compare/v0.5.0...v0.5.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **web:** read the scheme of the authorization header without case (CIHUB-34) ([#201](https://github.com/getcihub/cihub/issues/201)) ([9a90297](https://github.com/getcihub/cihub/commit/9a90297d1d129a76dd5fb31a01e07d140862516c))
+
 ## [0.5.0](https://github.com/getcihub/cihub/compare/v0.4.0...v0.5.0) (2026-10-30)
 
 
