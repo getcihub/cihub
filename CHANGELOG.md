@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/getcihub/cihub/compare/v0.5.1...v0.5.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **platform:** refuse a forged cursor as invalid_cursor ([#202](https://github.com/getcihub/cihub/issues/202)) ([6ad86d3](https://github.com/getcihub/cihub/commit/6ad86d373e5e8c2698de2fd8679164e49ea27896))
+
 ## [0.5.1](https://github.com/getcihub/cihub/compare/v0.5.0...v0.5.1) (2026-10-31)
 
 
