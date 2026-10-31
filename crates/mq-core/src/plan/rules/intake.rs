@@ -69,10 +69,13 @@ pub(in crate::plan) fn requests(
             merged_sha,
         } => {
             let item = item(item_id)?;
-            let reason = if item.state == ItemState::Pending {
-                Reason::MergeGraphDirectMerge
-            } else {
-                Reason::MergeGraphMerge
+            let is_direct = s
+                .direct_merge_candidate()
+                .is_some_and(|candidate| candidate.id == item.id);
+            let reason = match item.state {
+                ItemState::Pending if is_direct => Reason::MergeGraphDirectMerge,
+                ItemState::Pending => Reason::ManualMerge,
+                _ => Reason::MergeGraphMerge,
             };
             item_to_with(
                 item,

@@ -229,15 +229,12 @@ pub(in crate::plan) fn direct_merge<'a>(
     s: &'a Snapshot,
     settings: &QueueSettings,
 ) -> Option<&'a Item> {
-    if settings.direct_merge_mode.value != DirectMergeMode::Always
-        || s.state != QueueState::Running
-        || s.live_groups().next().is_some()
+    if settings.direct_merge_mode.value != DirectMergeMode::Always || s.state != QueueState::Running
     {
         return None;
     }
 
-    let first = *s.queue_order().first()?;
-    (first.state == ItemState::Pending && !first.direct_merge_tried).then_some(first)
+    s.direct_merge_candidate()
 }
 
 /// A tested item merges once its predecessors, and the members ahead of it
