@@ -309,6 +309,40 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_scheme_of_the_authorization_header_is_case_insensitive(pool: PgPool) {
+    let addr = start(&pool).await;
+    let admin = token(&pool, 1, &[ApiScope::QueuesWrite]).await;
+
+    for authorization in [
+        format!("Bearer {admin}"),
+        format!("bearer {admin}"),
+        format!("BEARER {admin}"),
+        format!("Bearer   {admin}"),
+        format!("Bearer\t{admin}"),
+    ] {
+        let answer = call_with(
+            &addr,
+            "GET",
+            "/api/v1/orgs/acme/audit",
+            &[("Authorization", authorization.as_str())],
+        )
+        .await;
+
+        assert_eq!(answer.status, 200, "{authorization:?}: {}", answer.body);
+    }
+
+    let basic = call_with(
+        &addr,
+        "GET",
+        "/api/v1/orgs/acme/audit",
+        &[("Authorization", "Basic abc")],
+    )
+    .await;
+
+    assert_eq!(basic.status, 401);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_line_of_a_request_says_which_request_and_which_organization(pool: PgPool) {
     let logs = cihub_telemetry::CapturedLogs::default();
     let _logs = tracing::subscriber::set_default(logs.subscriber());

@@ -415,6 +415,15 @@ async fn in_request_span(request: Request, next: Next) -> Response {
     response
 }
 
+/// RFC 9110 section 11.1: the authentication scheme is case-insensitive.
+fn bearer_of(header: &str) -> Option<SecretString> {
+    let (scheme, token) = header.split_once([' ', '\t'])?;
+
+    scheme
+        .eq_ignore_ascii_case("bearer")
+        .then(|| SecretString::from(token.trim().to_owned()))
+}
+
 async fn authenticated(
     State(state): State<ApiState>,
     params: Result<RawPathParams, RawPathParamsRejection>,
@@ -426,8 +435,7 @@ async fn authenticated(
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(|token| SecretString::from(token.trim().to_owned()));
+        .and_then(bearer_of);
     let names = PathNames::of(params.as_ref().ok());
     let authenticated = match bearer {
         Some(secret) if SessionClient::of(&secret) == Some(SessionClient::CommandLine) => {
@@ -1113,6 +1121,30 @@ mod tests {
         }
 
         client_address(PEER, &headers, hops)
+    }
+
+    #[test]
+    fn the_scheme_of_the_authorization_header_is_read_without_case() {
+        use secrecy::ExposeSecret;
+
+        for header in [
+            "Bearer abc",
+            "bearer abc",
+            "BEARER abc",
+            "Bearer   abc",
+            "Bearer\tabc",
+        ] {
+            let token = bearer_of(header);
+
+            assert_eq!(
+                token.as_ref().map(ExposeSecret::expose_secret),
+                Some("abc"),
+                "{header}"
+            );
+        }
+
+        assert!(bearer_of("Basic abc").is_none());
+        assert!(bearer_of("Bearer").is_none());
     }
 
     #[test]
