@@ -440,8 +440,13 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
     }
 }
 
-/// A push that arrives late (its `after`, or its `before`, is a past head)
-/// changes nothing: the tick reads the real head.
+/// A push whose `after` is the head or a past head arrives late and changes
+/// nothing: the tick reads the real head. A push belongs to the queue only
+/// when its `before` is unknown or is the head: any other `before` means that
+/// commits came in between, so the bases tested so far no longer hold. A push
+/// whose `before` is a past head and whose `after` the queue never saw is such
+/// an outside push delivered late: it invalidates the bases but does not move
+/// the head back.
 fn target_pushed(
     snapshot: &mut Snapshot,
     event: &Event,
@@ -452,11 +457,22 @@ fn target_pushed(
     let head = target.head.as_ref().map(|h| h.value.as_str());
     let past = |sha: &str| target.recent_heads.iter().any(|h| h == sha);
 
-    if head == Some(after) || past(after) || before.is_some_and(|b| Some(b) != head && past(b)) {
+    // Removed in both cases: a SHA of the queue that was seen once is spent.
+    let is_known_own = target.own_shas.remove(after);
+
+    if head == Some(after) || past(after) {
         return Outcome::Ignored;
     }
 
-    let own = event.actor == Actor::Bot || target.own_shas.remove(after);
+    if before.is_some_and(|b| Some(b) != head && past(b)) {
+        target.valid_bases.clear();
+        retain_bases(snapshot);
+
+        return Outcome::Applied;
+    }
+
+    let is_own =
+        (event.actor == Actor::Bot || is_known_own) && before.is_none_or(|b| Some(b) == head);
 
     if let Some(old) = target.head.take() {
         target.recent_heads.push_back(old.value);
@@ -471,18 +487,28 @@ fn target_pushed(
         observed_at: event.occurred_at,
     });
 
-    if !own {
+    if !is_own {
         target.valid_bases.clear();
     }
 
-    target.valid_bases.insert(after.to_owned());
-    let used: Vec<String> = snapshot.live_groups().map(|g| g.base_sha.clone()).collect();
-    snapshot
-        .target
-        .valid_bases
-        .retain(|b| b == after || used.contains(b));
+    retain_bases(snapshot);
 
     Outcome::Applied
+}
+
+/// Keeps the head and the bases that a live group uses.
+fn retain_bases(snapshot: &mut Snapshot) {
+    let used: Vec<String> = snapshot.live_groups().map(|g| g.base_sha.clone()).collect();
+    let target = &mut snapshot.target;
+    let head = target.head.as_ref().map(|h| h.value.clone());
+
+    if let Some(head) = &head {
+        target.valid_bases.insert(head.clone());
+    }
+
+    target
+        .valid_bases
+        .retain(|b| Some(b) == head.as_ref() || used.contains(b));
 }
 
 #[allow(
