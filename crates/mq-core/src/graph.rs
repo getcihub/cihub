@@ -62,15 +62,16 @@ pub(crate) fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -
 }
 
 /// Where a new item with `priority` enters `order`. `urgent` goes in front
-/// of every item that is not `urgent`, groups in test included; any other
-/// value goes in front of the first item that is not in test and has a
-/// higher value.
+/// of every item that is neither `urgent` nor `tests_passed`, groups in test
+/// included: a tested item is about to merge, and a test that skipped it would
+/// not contain it. Any other value goes in front of the first item that is not
+/// in test and has a higher value.
 pub(crate) fn insertion_index(order: &[&Item], priority: Priority) -> usize {
     order
         .iter()
         .position(|i| {
             if priority == Priority::URGENT {
-                i.priority > Priority::URGENT
+                i.priority > Priority::URGENT && i.state != ItemState::TestsPassed
             } else {
                 i.state == ItemState::Pending && i.priority > priority
             }
@@ -173,5 +174,17 @@ mod tests {
         assert_eq!(insertion_index(&order, Priority::HIGH), 2);
         assert_eq!(insertion_index(&order, Priority::MEDIUM), 3);
         assert_eq!(insertion_index(&order, Priority(1)), 1);
+    }
+
+    #[test]
+    fn urgent_goes_behind_the_items_that_passed_their_tests() {
+        let a = item(1, Some(1000), ItemState::TestsPassed, Priority::MEDIUM);
+        let b = item(2, Some(2000), ItemState::TestsPassed, Priority::LOW);
+        let c = item(3, Some(3000), ItemState::Testing, Priority::MEDIUM);
+        let d = item(4, Some(4000), ItemState::Pending, Priority::MEDIUM);
+
+        let order = [&a, &b, &c, &d];
+
+        assert_eq!(insertion_index(&order, Priority::URGENT), 2);
     }
 }
