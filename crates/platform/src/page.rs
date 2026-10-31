@@ -3,6 +3,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cihub_api_types::{DEFAULT_LIMIT, ErrorCode, MAX_LIMIT};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::ApiError;
 
@@ -20,6 +21,11 @@ struct Cursor<K> {
     list: String,
     after: K,
 }
+
+/// The time in a sort key: read as RFC 3339 when the cursor is read, so that
+/// a forged time is an invalid cursor and not an error of the database.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct CursorTime(#[serde(with = "time::serde::rfc3339")] pub OffsetDateTime);
 
 /// The page of a list that a request asks for: at most `limit` entries,
 /// after the entry whose sort key is `after`.
@@ -98,6 +104,8 @@ pub fn cursor_of<K: Serialize>(list: &str, after: K) -> String {
 
 #[cfg(test)]
 mod tests {
+    use time::macros::datetime;
+
     use super::*;
 
     #[test]
@@ -114,6 +122,21 @@ mod tests {
         );
         assert!(other.is_err_and(|err| err.code == ErrorCode::InvalidCursor));
         assert!(broken.is_err_and(|err| err.code == ErrorCode::InvalidCursor));
+    }
+
+    #[test]
+    fn a_cursor_time_is_read_as_rfc_3339_only() {
+        let valid = cursor_of("prs", ("2026-10-11T09:30:00Z", "item_1"));
+        let forged = cursor_of("prs", ("garbage", "item_1"));
+
+        let page = Page::<(CursorTime, String)>::read("prs", Some(&valid), None);
+        let refused = Page::<(CursorTime, String)>::read("prs", Some(&forged), None);
+
+        assert_eq!(
+            page.ok().and_then(|page| page.after).map(|(at, _)| at.0),
+            Some(datetime!(2026-10-11 09:30:00 UTC))
+        );
+        assert!(refused.is_err_and(|err| err.code == ErrorCode::InvalidCursor));
     }
 
     #[test]

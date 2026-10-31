@@ -25,10 +25,10 @@ use cihub_domain::{
     ApiScope, ApiTokenId, JobClass, OrgId, Permission, RepoId, RequestId, SessionId, UserId,
 };
 use cihub_platform::{
-    Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, ORG_IS_SUSPENDED,
-    PAGE_ERRORS, Page, PlatformError, authenticate, cursor_of, document_error, error_examples,
-    error_responses, forget_tokens_without_session, memberships_of, profile_of, readable_repos,
-    repo_permission_now, request_user_sync, request_user_sync_when_old, role_now,
+    Access, ApiError, ApiGrant, ApiPath, ApiQuery, CursorTime, GrantActor, ModuleApi,
+    ORG_IS_SUSPENDED, PAGE_ERRORS, Page, PlatformError, authenticate, cursor_of, document_error,
+    error_examples, error_responses, forget_tokens_without_session, memberships_of, profile_of,
+    readable_repos, repo_permission_now, request_user_sync, request_user_sync_when_old, role_now,
 };
 use cihub_scm::Scm;
 use cihub_store::{DatabaseCipher, PgPool, begin_org, begin_system};
@@ -36,7 +36,6 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use tracing::field::{Empty, display};
 use tracing::{Instrument, Span, debug, info_span, warn};
 use utoipa::openapi::path::{Operation, PathItem};
@@ -1044,16 +1043,19 @@ async fn list_audit(
     ApiQuery(query): ApiQuery<PageQuery>,
 ) -> Result<Json<AuditList>, ApiError> {
     grant.require(ApiScope::QueuesWrite)?;
-    let page: Page<(String, String)> = Page::read("audit", query.from.as_deref(), query.limit)?;
+    let page: Page<(CursorTime, String)> = Page::read("audit", query.from.as_deref(), query.limit)?;
 
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log")
         .fetch_one(&mut *tx)
         .await?;
-    let (occurred_at, id) = page.after.clone().unzip();
+    let (occurred_at, id) = page
+        .after
+        .clone()
+        .map_or((None, None), |(at, id)| (Some(at.0), Some(id)));
     let rows: Vec<AuditRow> = sqlx::query_as(
         "SELECT id, action, target, actor_user_id, before, after, occurred_at FROM audit_log
-         WHERE $1::text IS NULL OR (occurred_at, id) < ($1::timestamptz, $2)
+         WHERE $1::timestamptz IS NULL OR (occurred_at, id) < ($1, $2)
          ORDER BY occurred_at DESC, id DESC
          LIMIT $3",
     )
@@ -1077,11 +1079,7 @@ async fn list_audit(
         )
         .collect();
     let (entries, has_more): (Vec<AuditEntry>, bool) = page.split(entries);
-    let cursor = entries
-        .last()
-        .filter(|_| has_more)
-        .map(audit_cursor)
-        .transpose()?;
+    let cursor = entries.last().filter(|_| has_more).map(audit_cursor);
 
     Ok(Json(AuditList {
         entries,
@@ -1091,10 +1089,8 @@ async fn list_audit(
     }))
 }
 
-fn audit_cursor(entry: &AuditEntry) -> Result<String, ApiError> {
-    let occurred_at = entry.occurred_at.format(&Rfc3339)?;
-
-    Ok(cursor_of("audit", (occurred_at, &entry.id)))
+fn audit_cursor(entry: &AuditEntry) -> String {
+    cursor_of("audit", (CursorTime(entry.occurred_at), &entry.id))
 }
 
 type AuditRow = (
