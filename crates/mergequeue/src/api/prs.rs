@@ -9,14 +9,13 @@ use cihub_domain::{
 };
 use cihub_mq_core::current_window;
 use cihub_platform::{
-    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, Page, cursor_of, enqueue_job,
+    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, CursorTime, Job, Page, cursor_of, enqueue_job,
 };
 use cihub_store::event_kind;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, QueryBuilder};
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use super::queues::{
     QUEUE_COLUMNS, QUEUE_SOURCE, QueueRow, median_run_seconds, queue_row, seconds_of,
@@ -315,8 +314,8 @@ fn item_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<ItemSta
 /// The sort key of a PR in a list: by `newest`, its submission and its
 /// identifier; by `position`, its repository, its queue and its position
 /// before them.
-type NewestKey = (String, String);
-type PositionKey = (String, String, i64, String, String);
+type NewestKey = (CursorTime, String);
+type PositionKey = (String, String, i64, CursorTime, String);
 
 /// The filters of a list of PRs, which [`push_filter`] writes.
 struct PrFilter {
@@ -482,8 +481,7 @@ async fn pr_list(
     let cursor = prs
         .last()
         .filter(|_| has_more)
-        .map(|pr| pr_cursor(pr, query.sort))
-        .transpose()?;
+        .map(|pr| pr_cursor(pr, query.sort));
     Ok(Json(PrList {
         prs,
         has_more,
@@ -527,8 +525,8 @@ async fn pr_page(
             push_filter(&mut sql, filter);
             if let Some((at, id)) = page.after.clone() {
                 sql.push(" AND (i.submitted_at, i.id) < (")
-                    .push_bind(at)
-                    .push("::timestamptz, ")
+                    .push_bind(at.0)
+                    .push(", ")
                     .push_bind(id)
                     .push(")");
             }
@@ -559,8 +557,7 @@ async fn pr_page(
                 key.push_bind(repo)
                     .push_bind(queue)
                     .push_bind(position)
-                    .push_bind(at)
-                    .push_unseparated("::timestamptz")
+                    .push_bind(at.0)
                     .push_bind(id);
                 sql.push(")");
             }
@@ -575,16 +572,16 @@ async fn pr_page(
 }
 
 /// The cursor of the page after `pr`, in a list sorted by `sort`.
-fn pr_cursor(pr: &Pr, sort: PrSort) -> Result<String, ApiError> {
-    let submitted_at = pr.submitted_at.format(&Rfc3339)?;
+fn pr_cursor(pr: &Pr, sort: PrSort) -> String {
+    let submitted_at = CursorTime(pr.submitted_at);
 
-    Ok(match sort {
+    match sort {
         PrSort::Newest => cursor_of("prs.newest", (submitted_at, &pr.id)),
         PrSort::Position => {
             let key = (&pr.repo, &pr.queue, place_of(pr), submitted_at, &pr.id);
             cursor_of("prs.position", key)
         }
-    })
+    }
 }
 
 fn pr_not_found(number: u64) -> ApiError {
@@ -644,7 +641,7 @@ pub(super) struct EventQuery {
 
 /// The sort key of an event of a PR: its time, its sequence number and its
 /// identifier.
-type EventKey = (String, i64, String);
+type EventKey = (CursorTime, i64, String);
 
 /// The submissions of the PR `$2` to the queues of the repository `$1`.
 const PR_ITEMS: &str =
@@ -698,11 +695,7 @@ pub(super) async fn list_events(
         .into_iter()
         .map(event_of)
         .collect::<Result<Vec<_>, _>>()?;
-    let cursor = events
-        .last()
-        .filter(|_| has_more)
-        .map(event_cursor)
-        .transpose()?;
+    let cursor = events.last().filter(|_| has_more).map(event_cursor);
     Ok(Json(EventList {
         events,
         has_more,
@@ -729,7 +722,7 @@ async fn event_rows(
     page: &Page<EventKey>,
 ) -> Result<Vec<EventRow>, ApiError> {
     let (at, seq, id) = match page.after.clone() {
-        Some((at, seq, id)) => (Some(at), Some(seq), Some(id)),
+        Some((at, seq, id)) => (Some(at.0), Some(seq), Some(id)),
         None => (None, None, None),
     };
 
@@ -743,7 +736,7 @@ async fn event_rows(
          LEFT JOIN events c ON c.queue_id = e.queue_id AND c.id = e.cause_id
          LEFT JOIN users cu ON cu.id = c.actor_user_id
          WHERE (e.queue_id, e.item_id) IN ({PR_ITEMS})
-           AND ($3::text IS NULL OR (e.occurred_at, e.seq, e.id) > ($3::timestamptz, $4, $5))
+           AND ($3::timestamptz IS NULL OR (e.occurred_at, e.seq, e.id) > ($3, $4, $5))
          ORDER BY e.occurred_at, e.seq, e.id
          LIMIT $6"
     )))
@@ -777,10 +770,11 @@ fn event_of(row: EventRow) -> Result<Event, ApiError> {
     })
 }
 
-fn event_cursor(event: &Event) -> Result<String, ApiError> {
-    let occurred_at = event.occurred_at.format(&Rfc3339)?;
-
-    Ok(cursor_of("events", (occurred_at, event.seq, &event.id)))
+fn event_cursor(event: &Event) -> String {
+    cursor_of(
+        "events",
+        (CursorTime(event.occurred_at), event.seq, &event.id),
+    )
 }
 
 /// The sentence of an event of an item, as the history of the dashboard shows

@@ -4196,6 +4196,35 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "a cursor of another list is refused"
     );
 
+    // Cursors of the right list whose time is not RFC 3339, forged by hand.
+    let forged = [
+        (
+            format!("{prs}&from=eyJsaXN0IjoicHJzLm5ld2VzdCIsImFmdGVyIjpbImdhcmJhZ2UiLCJ4Il19"),
+            "the newest order",
+        ),
+        (
+            format!(
+                "{prs}&sort=position&from=eyJsaXN0IjoicHJzLnBvc2l0aW9uIiwiYWZ0ZXIiOlsiciIsInEiLDEsImdhcmJhZ2UiLCJ4Il19"
+            ),
+            "the position order",
+        ),
+        (
+            format!(
+                "{pr_path}/events?from=eyJsaXN0IjoiZXZlbnRzIiwiYWZ0ZXIiOlsiZ2FyYmFnZSIsMSwieCJdfQ"
+            ),
+            "the events",
+        ),
+    ];
+    for (path, what) in forged {
+        let (status, body) = call("GET", path, None).await;
+
+        assert_eq!(
+            (status, &body["code"]),
+            (400, &Value::from("invalid_cursor")),
+            "a cursor with a broken time is refused in {what}: {body}"
+        );
+    }
+
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();

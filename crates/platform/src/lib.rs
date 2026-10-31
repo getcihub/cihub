@@ -62,7 +62,7 @@ pub use members::{
 };
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use news::{QueueChange, QueueNews, QueueNewsFeed, notify_queue_changed};
-pub use page::{PAGE_ERRORS, Page, cursor_of};
+pub use page::{CursorTime, PAGE_ERRORS, Page, cursor_of};
 pub use persons::{
     ACCESS_LIFETIME, Access, PersonToken, SYNC_USER, forget_permissions_before,
     forget_tokens_without_session, keep_person_token, readable_repos, repo_permission_now,
