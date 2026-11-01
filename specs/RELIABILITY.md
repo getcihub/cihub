@@ -54,6 +54,11 @@ Code: `crates/mergequeue/src/assembly.rs` (`ASSEMBLY_ATTEMPTS`, `ASSEMBLY_WAIT`)
 - **REL-15** At assembly, a validation error rereads the ref and goes on if it already matches; a transient error
   (5xx, rate limit, shutdown) does not count as an attempt. A 403 at ref creation gives
   `start_test_run_permissions_block_test_branch`.
+- **REL-33** A call that the SCM applies but whose answer is lost (a 5xx or a timeout after the effect: a merge, a
+  ref, a comment, a status) returns an error, and the next read shows the effect. The job reads the real state
+  before it acts and does nothing when the state is reached (principle III): the retry of a lost merge reads the
+  PR and does not merge it again. The simulator injects this fault (`Sim::lose_answer`, `lost_answer_percent` of
+  `RandomFaults`).
 
 ## External drift
 

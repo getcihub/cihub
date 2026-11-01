@@ -465,6 +465,7 @@ pub(crate) async fn merge_pr(
 
 /// Moves the base of the PR to the tested commit. GitHub has no
 /// fast-forward merge, but marks the PR merged once its head is in the base.
+/// It refuses a PR that is not open, as the other methods do.
 async fn fast_forward(
     app: &GithubApp,
     repo: &RepoRef,
@@ -474,6 +475,10 @@ async fn fast_forward(
     let pr = read_pr(app, repo, merge.number, class).await?;
     if let Some(sha) = pr.merged_sha() {
         return Ok(sha);
+    }
+
+    if pr.state != "OPEN" {
+        return Err(ScmError::MergeRejected("PR closed".into()));
     }
 
     if pr.head_ref_oid != merge.head_sha {
