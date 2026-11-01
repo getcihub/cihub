@@ -8,8 +8,8 @@ use time::OffsetDateTime;
 
 use cihub_domain::{
     CheckKind, CheckObservation, CheckReport, EventId, GroupId, ImpactedTargets, Item, ItemId,
-    JobError, Mergeability, OrgId, PrState, Priority, QueueControl, QueueId, QueueMode, QueueState,
-    ReviewDecision, RunId, RunStatus, SubmittedVia, TestGroup, TestRun,
+    ItemState, JobError, Mergeability, OrgId, PrState, Priority, QueueControl, QueueId, QueueMode,
+    QueueState, ReviewDecision, RunId, RunStatus, SubmittedVia, TestGroup, TestRun,
 };
 
 /// An observation with the fact that produced it, so that a decision can
@@ -234,6 +234,19 @@ impl Snapshot {
             .collect();
         items.sort_by_key(|i| i.position);
         items
+    }
+
+    /// The item that a direct merge may merge: the first of the queue,
+    /// `pending`, with no live group and no direct merge tried. `apply` uses it
+    /// to tell the push of a direct merge from the push of any other `pending`
+    /// item.
+    pub fn direct_merge_candidate(&self) -> Option<&Item> {
+        if self.live_groups().next().is_some() {
+            return None;
+        }
+
+        let first = *self.queue_order().first()?;
+        (first.state == ItemState::Pending && !first.direct_merge_tried).then_some(first)
     }
 
     /// The live item of a PR.
