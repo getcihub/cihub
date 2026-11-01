@@ -22,6 +22,16 @@ const config: NextConfig = {
       { source: "/openapi/:path*", headers: machineFileHeaders("application/json") },
     ]);
   },
+  // PostHog receives its events on this domain (src/instrumentation-client.ts);
+  // its API ends some paths with a slash, which Next.js would redirect.
+  rewrites() {
+    return Promise.resolve([
+      { source: "/ingest/static/:path*", destination: "https://eu-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/array/:path*", destination: "https://eu-assets.i.posthog.com/array/:path*" },
+      { source: "/ingest/:path*", destination: "https://eu.i.posthog.com/:path*" },
+    ]);
+  },
+  skipTrailingSlashRedirect: true,
   // The paths that an agent guesses for the installation.
   redirects() {
     return Promise.resolve(

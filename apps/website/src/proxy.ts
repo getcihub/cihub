@@ -14,6 +14,14 @@ const negotiated = { headers: { Vary: "Accept" } };
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // next.config.ts sets skipTrailingSlashRedirect for PostHog: a page of the
+  // documentation keeps one URL here.
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const url = new URL(request.url);
+    url.pathname = pathname.slice(0, -1);
+    return NextResponse.redirect(url, 308);
+  }
+
   const markdownPage = markdownSuffix.rewrite(pathname);
   if (markdownPage) {
     return NextResponse.rewrite(new URL(markdownPage, request.nextUrl));
