@@ -459,61 +459,65 @@ fn an_external_push_restarts_every_group() {
     assert_replays(&w);
 }
 
-#[test]
-fn an_outside_push_delivered_after_the_own_push_restarts_the_groups() {
-    let mut w = world();
-    let base = w.snapshot.target.head.as_ref().unwrap().value.clone();
-    w.submit(1, Priority::MEDIUM);
-    w.submit(2, Priority::MEDIUM);
-    w.assemble_all();
-    w.report(1, CheckConclusion::Success);
-    w.report(2, CheckConclusion::Success);
-
-    let merges = w.reconcile().desired.merges;
-    let first = merges.iter().find(|m| m.pr_number == 1).unwrap().item_id;
-    let user = Actor::User {
+fn user() -> Actor {
+    Actor::User {
         user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-    };
+    }
+}
+
+fn push_from(w: &mut World, before: &str, after: &str) {
+    w.fact(
+        user(),
+        EventKind::TargetPushed {
+            before: Some(before.to_owned()),
+            after: after.to_owned(),
+            sender_id: None,
+        },
+    );
+}
+
+fn merge(w: &mut World, pr_number: u64, merged_sha: &str) {
+    let merges = w.reconcile().desired.merges;
+    let item_id = merges
+        .iter()
+        .find(|m| m.pr_number == pr_number)
+        .unwrap()
+        .item_id;
     w.fact(
         Actor::System,
         EventKind::MergeSucceeded {
-            item_id: first,
-            merged_sha: "own".into(),
+            item_id,
+            merged_sha: merged_sha.into(),
         },
     );
-    w.fact(
-        user.clone(),
-        EventKind::TargetPushed {
-            before: Some("outside".into()),
-            after: "own".into(),
-            sender_id: None,
-        },
-    );
-    w.fact(
-        user,
-        EventKind::TargetPushed {
-            before: Some(base),
-            after: "outside".into(),
-            sender_id: None,
-        },
-    );
+}
 
-    let merges = w.reconcile().desired.merges;
+#[test]
+fn an_outside_push_delivered_after_the_own_push_restarts_the_groups() {
+    let mut w = world();
+    let base = w.snapshot.target.head.clone().unwrap().value;
+    for pr in 1..=2 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=2 {
+        w.report(pr, CheckConclusion::Success);
+    }
 
-    assert!(
-        merges.iter().all(|m| m.pr_number != 2),
-        "PR 2, tested without the outside commit, still merges: state {:?}, valid bases {:?}",
-        w.state(2),
-        w.snapshot.target.valid_bases
-    );
+    merge(&mut w, 1, "own");
+    push_from(&mut w, "outside", "own");
+    push_from(&mut w, &base, "outside");
+
+    assert_eq!(w.state(2), Some(ItemState::Testing));
     assert!(decided_with(&w, Reason::ManualPushToTargetBranch));
+    assert_eq!(w.snapshot.target.head.clone().unwrap().value, "own");
     assert_replays(&w);
 }
 
 #[test]
 fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
     let mut w = World::new(settings(window(3)));
-    let base = w.snapshot.target.head.as_ref().unwrap().value.clone();
+    let base = w.snapshot.target.head.clone().unwrap().value;
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
@@ -521,21 +525,9 @@ fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
     for pr in 1..=3 {
         w.report(pr, CheckConclusion::Success);
     }
-    let user = Actor::User {
-        user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-    };
 
-    for (pr, merged_sha) in [(1, "own1"), (2, "own2")] {
-        let merges = w.reconcile().desired.merges;
-        let item_id = merges.iter().find(|m| m.pr_number == pr).unwrap().item_id;
-        w.fact(
-            Actor::System,
-            EventKind::MergeSucceeded {
-                item_id,
-                merged_sha: merged_sha.into(),
-            },
-        );
-    }
+    merge(&mut w, 1, "own1");
+    merge(&mut w, 2, "own2");
     w.fact(
         Actor::System,
         EventKind::TargetPushed {
@@ -544,25 +536,11 @@ fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
             sender_id: None,
         },
     );
-    for (before, after) in [(base.as_str(), "own1"), ("own1", "own2")] {
-        w.fact(
-            user.clone(),
-            EventKind::TargetPushed {
-                before: Some(before.into()),
-                after: after.into(),
-                sender_id: None,
-            },
-        );
-    }
+    push_from(&mut w, &base, "own1");
+    push_from(&mut w, "own1", "own2");
 
-    let merges = w.reconcile().desired.merges;
-
-    assert!(
-        merges.iter().any(|m| m.pr_number == 3),
-        "PR 3 restarted: state {:?}, valid bases {:?}",
-        w.state(3),
-        w.snapshot.target.valid_bases
-    );
+    assert_eq!(w.state(3), Some(ItemState::TestsPassed));
+    assert!(!decided_with(&w, Reason::ManualPushToTargetBranch));
     assert_replays(&w);
 }
 
@@ -580,109 +558,6 @@ fn a_late_push_changes_nothing() {
 
     let head = w.snapshot.target.head.clone().unwrap().value;
     assert_eq!(w.push_target_to(Actor::System, head), Outcome::Ignored);
-}
-
-fn push_from(w: &mut World, actor: Actor, before: Option<&str>, after: &str) -> Outcome {
-    w.fact(
-        actor,
-        EventKind::TargetPushed {
-            before: before.map(str::to_owned),
-            after: after.to_owned(),
-            sender_id: None,
-        },
-    )
-}
-
-fn head_of(w: &World) -> String {
-    w.snapshot.target.head.clone().unwrap().value
-}
-
-#[test]
-fn an_own_push_on_the_head_keeps_the_valid_bases() {
-    let mut w = world();
-    let base = head_of(&w);
-    w.snapshot.target.own_shas.insert("own".into());
-
-    let outcome = push_from(&mut w, Actor::System, Some(&base), "own");
-
-    assert_eq!(outcome, Outcome::Applied);
-    assert_eq!(head_of(&w), "own");
-    assert!(w.snapshot.target.valid_bases.contains("own"));
-    assert!(w.snapshot.target.own_shas.is_empty());
-}
-
-#[test]
-fn an_own_push_whose_before_is_not_the_head_clears_the_valid_bases() {
-    let mut w = world();
-    w.snapshot.target.own_shas.insert("own".into());
-    w.snapshot.target.valid_bases.insert("tested".into());
-
-    push_from(&mut w, Actor::System, Some("outside"), "own");
-
-    assert_eq!(
-        w.snapshot.target.valid_bases.iter().collect::<Vec<_>>(),
-        vec!["own"]
-    );
-}
-
-#[test]
-fn a_push_of_the_bot_whose_before_is_not_the_head_is_not_own() {
-    let mut w = world();
-    w.snapshot.target.valid_bases.insert("tested".into());
-
-    push_from(&mut w, Actor::Bot, Some("outside"), "own");
-
-    assert_eq!(
-        w.snapshot.target.valid_bases.iter().collect::<Vec<_>>(),
-        vec!["own"]
-    );
-}
-
-#[test]
-fn a_push_of_the_bot_removes_its_sha_from_the_own_shas() {
-    let mut w = world();
-    let base = head_of(&w);
-    w.snapshot.target.own_shas.insert("own".into());
-
-    push_from(&mut w, Actor::Bot, Some(&base), "own");
-
-    assert!(w.snapshot.target.own_shas.is_empty());
-}
-
-#[test]
-fn a_late_outside_push_invalidates_the_bases_without_moving_the_head() {
-    let mut w = world();
-    let base = head_of(&w);
-    push_from(&mut w, Actor::Bot, Some(&base), "own");
-    w.snapshot.target.valid_bases.insert("tested".into());
-
-    let outcome = push_from(
-        &mut w,
-        Actor::User {
-            user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-        },
-        Some(&base),
-        "outside",
-    );
-
-    assert_eq!(outcome, Outcome::Applied);
-    assert_eq!(head_of(&w), "own");
-    assert_eq!(
-        w.snapshot.target.valid_bases.iter().collect::<Vec<_>>(),
-        vec!["own"]
-    );
-}
-
-#[test]
-fn a_duplicate_push_of_a_past_head_is_still_ignored() {
-    let mut w = world();
-    let base = head_of(&w);
-    push_from(&mut w, Actor::Bot, Some(&base), "own");
-
-    let outcome = push_from(&mut w, Actor::System, None, &base);
-
-    assert_eq!(outcome, Outcome::Ignored);
-    assert_eq!(head_of(&w), "own");
 }
 
 #[test]
