@@ -244,6 +244,15 @@ reason no longer holds.
 - **Why not**: the assembly redoes the merges of the predecessors on `base_sha`, so the test commit of a PR does
   not descend from that of its predecessor and the target cannot fast-forward to it.
 
+### A lost access as a `paused` state of the queue
+
+- **Tried / considered**: `access.lost` moves the queue to `paused` with the reason `access_lost`, and
+  `access.restored` moves it back, first to `running`, then to the state that the snapshot kept before the loss.
+- **Why not**: one state for two independent causes loses the choice of the admin. A pause of the admin was undone
+  by `access.restored`; a drain became `running`; a pause or a drain asked while the access was lost was refused,
+  then the return started the queue; a resume without the access started a queue that could not reach the SCM. The
+  state keeps the choice of the admin, and `is_access_lost` in the snapshot stops the queue apart from it.
+
 ### Enable `trigger: inplace` by removing the configuration refusal
 
 - **Tried / considered**: update the branch of the PR itself and test it there.

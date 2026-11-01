@@ -59,7 +59,7 @@ export function Banners({ queue, org, repo, now }: { queue: Queue; org: string; 
           The queue keeps the settings of its last valid file: {queue.config_error}
         </Banner>
       )}
-      {queue.state === "paused" && !isAccessLost && (
+      {queue.state === "paused" && (
         <Banner
           variant="warning"
           icon={<PauseIcon />}
