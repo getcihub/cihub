@@ -5,6 +5,7 @@ import { cardVariants } from "@cihub/ui/components/card";
 import { Prose } from "@cihub/ui/components/prose";
 import { cn } from "@cihub/ui/lib/cn";
 import { etaOf, whereOf } from "@/domain/pr/words";
+import { isStopped } from "@/domain/queue/attention";
 import { plural } from "@/lib/text";
 
 /** The PRs of the person in the queue of the page, first on it. */
@@ -35,7 +36,7 @@ export function Spotlight({ org, prs, queue }: { org: string; prs: Pr[]; queue: 
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,320px)] items-center gap-6 max-md:grid-cols-[minmax(0,1fr)] max-md:gap-2">
               <div>
                 <b className="block text-6xl leading-[1.15] font-medium tracking-[-0.4px]">
-                  {whereOf(pr, queue.state === "paused", branch)}
+                  {whereOf(pr, isStopped(queue), branch)}
                 </b>
                 {pr.state === "pending" && (
                   <span className="text-md text-muted-foreground">

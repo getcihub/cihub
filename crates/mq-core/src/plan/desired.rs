@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{ItemId, QueueState};
+use cihub_domain::ItemId;
 use time::OffsetDateTime;
 
 use crate::Snapshot;
@@ -45,7 +45,7 @@ pub(super) fn desired(
         })
         .collect();
 
-    let merges = if s.state == QueueState::Paused {
+    let merges = if s.is_stopped() {
         Vec::new()
     } else {
         s.queue_order()
