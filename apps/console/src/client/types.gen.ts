@@ -1303,7 +1303,7 @@ export type Run = {
      */
     id: string;
     /**
-     * The targets that the tested PRs change (lot 13); `null` until then.
+     * The targets that the tested PRs change; `null` until the `parallel` strategy.
      */
     impacted_targets?: {
         [key: string]: unknown;

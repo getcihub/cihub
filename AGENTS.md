@@ -16,9 +16,9 @@ same change: code, routes, clients, tests, specs. No alias, no fallback, no "leg
   or of a public format is proposed to the project lead and validated before it is written. The rest, the author
   decides and the review checks. The reason of a choice goes into the commit message, or into a comment when the
   code needs it.
-- **One lot at a time.** Take the current lot in `specs/LOTS.md` (skill `/lot`), respect its frozen interfaces,
-  do not anticipate the next lots. Its automated exit criterion defines "done". Update its status and its
-  "Tracking" block in the same change as the code.
+- **One Linear issue at a time.** The work is planned in Linear (team CIHub): a project gives the goal, the
+  interfaces it freezes and its exit criterion; an issue gives a part of it. Take one issue, respect the frozen
+  interfaces, do not anticipate the next issues. The exit criterion defines "done".
 - **Verify before saying "done".** `mise run check` (lint, then tests); `mise run rust:integration` when the
   change touches Postgres or a job; `mise run rust:cover` for a pure crate. Show the output.
 - **Update the spec of the subject in the same change** (map below). When an approach fails or is rejected for a
@@ -108,7 +108,6 @@ last one, `Build Success`, is the required status.
 | Spec                                            | When to read it                                                    |
 | ----------------------------------------------- | ------------------------------------------------------------------ |
 | `GOAL.md`                                       | First: the sentence, the acceptance table, what we do not optimize |
-| `specs/LOTS.md`                                 | Before starting: phases, current lot, exit criteria                |
 | `specs/LESSONS.md`                              | Before proposing a change: what we tried and do not do             |
 | `specs/ARCHITECTURE.md`                         | Before the first code change: the path of an event, roles, crates  |
 | `specs/DOMAIN.md`                               | States, transitions, reasons: the vocabulary                       |
@@ -118,5 +117,5 @@ last one, `Build Success`, is the required status.
 | `specs/CONFIGURATION.md`, `specs/API.md`        | A setting or a key of `.cihub.yaml`; a route, an error, a command  |
 | `specs/RELIABILITY.md`, `specs/SECURITY.md`     | A job or an SCM call; authentication, tokens, secrets              |
 | `specs/OBSERVABILITY.md`, `specs/DEPLOYMENT.md` | A log, a metric; the image, the chart, the `CIHUB_*` variables     |
-| `specs/ANALYTICS.md`, `specs/FLAKY_TESTS.md`    | The modules to come (lots 11 and 14)                               |
+| `specs/ANALYTICS.md`, `specs/FLAKY_TESTS.md`    | The modules to come: outgoing webhooks, flaky tests                |
 | `specs/COMPETITION.md`                          | Justify a deviation from the other merge queues                    |

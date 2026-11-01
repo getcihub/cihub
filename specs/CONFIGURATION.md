@@ -171,8 +171,8 @@ failure budget retry.
 | `not_ready_timeout_hours`                                      | 168                                 | 1–720                                                                      |
 | `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward` (`sequential` strategy only) |
 | `merge_commit_title`                                           | `pr_title`                          | `pr_title`, `pr_title_and_number`                                          |
-| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`; `inplace` arrives with a later lot and is refused until then |
-| `update_method`                                                | `merge`                             | `merge`; used by `inplace` (`rebase` arrives with a later lot) |
+| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`; `inplace` arrives later and is refused until then |
+| `update_method`                                                | `merge`                             | `merge`; used by `inplace` (`rebase` arrives later) |
 | `batching.enabled` / `size` / `max_wait_minutes`               | disabled / 4 / 5                    | maximum size 2–20, wait 1–60                                               |
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |
 | `optimistic_merging`                                           | disabled                            | boolean                                                                    |

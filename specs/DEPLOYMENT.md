@@ -20,7 +20,7 @@ data; the flags of the role apply only when it creates the role.
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none)          | `postgres`, `postgres-setup`                                                                                                                                                                                                              |
 | `server`        | `cihub-migrate` (one-shot `cihub-server migrate up`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                      |
-| `observability` | Prometheus (`127.0.0.1:9090`, scrapes `cihub-server:8081/metrics`, empty until lot 11b), Loki, Alloy (sends the logs of the containers of the compose project to Loki, with the label `service`), Grafana (`127.0.0.1:3000`, anonymous admin) |
+| `observability` | Prometheus (`127.0.0.1:9090`, scrapes `cihub-server:8081/metrics`, empty until the Prometheus metrics), Loki, Alloy (sends the logs of the containers of the compose project to Loki, with the label `service`), Grafana (`127.0.0.1:3000`, anonymous admin) |
 | `tunnel`        | `cloudflared`: a named Cloudflare Tunnel, token in `CLOUDFLARE_TUNNEL_TOKEN`, so that GitHub delivers the webhooks of the test App                                                                                                        |
 
 The `server` profile takes the variables of the test App from the environment, which mise fills from

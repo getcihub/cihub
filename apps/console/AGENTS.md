@@ -242,4 +242,4 @@ download it and open `index.html`. It gates nothing. Its viewer (`e2e/visual/vie
 `src/`, built as one script, as a page opened from the disk runs no module. The fixtures use the types of `src/client`: a change of the API that they no longer
 follow fails the type check. A new page or a new state adds its view to `views.ts`.
 
-Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d, 11a).
+Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/ANALYTICS.md`.

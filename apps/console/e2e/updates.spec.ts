@@ -1,4 +1,4 @@
-// The exit criterion of lot 10d (specs/LOTS.md): a change on the simulator
+// A change on the simulator
 // shows on an open page in less than 2 seconds, without a reload. The isolation
 // of the stream of an organization and its end with the server are tested
 // against Postgres (`crates/web/tests/postgres.rs`).

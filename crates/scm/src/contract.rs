@@ -1,4 +1,4 @@
-//! The contract suite of the `Scm` trait (lot 4): one sequence of calls,
+//! The contract suite of the `Scm` trait: one sequence of calls,
 //! with the answers that every adapter must give. It runs against the
 //! simulator, and against the recorded answers of each SCM. The world it
 //! reads is described by a [`Fixture`]; [`crate::sim::contract_world`] builds

@@ -18,7 +18,7 @@ pub struct ScmDelivery {
 }
 
 /// What a delivery tells CIHub. An event says what changed, not the new
-/// state: the scheduler reads the state again when it needs it (lot 5).
+/// state: the scheduler reads the state again when it needs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScmEvent {
     /// A PR, its reviews or its labels changed.

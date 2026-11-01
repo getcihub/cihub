@@ -1,4 +1,4 @@
-//! The names of the test branches (lot 6, a frozen interface). The assembly
+//! The names of the test branches (a frozen interface). The assembly
 //! job creates `<prefix>-temp/pr-<n>/<run_id>`, merges the heads there, then
 //! creates `<prefix>-merge/pr-<n>/<run_id>` at the result and deletes the
 //! temporary branch. The name of a test branch leads back to its run: a check

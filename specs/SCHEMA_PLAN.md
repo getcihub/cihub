@@ -5,7 +5,7 @@ Codecov schema (`umbrella`). Nothing here is decided: the project lead validates
 changes. The code stays the source of truth; this file is deleted once its steps are done or refused.
 
 **Goal.** Fewer tables, fewer columns, fewer enum values, with the same features. Every object in the schema
-must be read by code that exists today. What a future lot needs is created by that lot, in its final shape.
+must be read by code that exists today. What a future feature needs is created with it, in its final shape.
 
 **What does not change.** Identifiers are `text` in the typedid form. Every tenant table carries `org_id`
 and goes through `cihub_tenant_table`. The log is the source of truth and the other tables are projections
@@ -57,7 +57,7 @@ validation of the step wait for the project lead.
 ### `memberships`
 
 Drop the table, the enum `membership_role` and `MembershipRole`. The roles come from the SCM membership and
-serve the dashboard of lot 10 (`specs/SECURITY.md`): lot 10 creates the table in its final shape, with the
+serve the dashboard (`specs/SECURITY.md`): the dashboard creates the table in its final shape, with the
 refresh job that fills it. Until then `api_tokens` is the only authentication.
 
 **Risk.** None.
@@ -121,8 +121,8 @@ before and after (`mise run rust:sim`).
 | `api_tokens.created_by`           | Drop the column and `NewApiToken.created_by`; the route that creates a token adds it back |
 | `scm_connections.claimed_at`      | Drop; `created_at` carries the same instant                            |
 | `connection_kind.github_sudo_app` | Drop the value and `ConnectionKind::GithubSudoApp`                     |
-| `api_scope.metrics:read`          | Drop the value and `ApiScope::MetricsRead`; lot 11 adds it with `GET /metrics` |
-| `api_scope.targets:write`         | Drop the value and `ApiScope::TargetsWrite`; lot 13 adds it with `POST …/impacted-targets` |
+| `api_scope.metrics:read`          | Drop the value and `ApiScope::MetricsRead`; `GET /metrics` adds it back |
+| `api_scope.targets:write`         | Drop the value and `ApiScope::TargetsWrite`; `POST …/impacted-targets` adds it back |
 
 **Risk.** None; the enum test (`postgres_enums_match_the_domain`) and the API tests catch a forgotten side.
 
@@ -143,20 +143,20 @@ API response, which this change keeps as it is.
 
 **Status.** `jobs.scm_instance_id` is gone, since a deployment serves a single SCM: the composite foreign key of `jobs` becomes (`org_id`, `connection_id`).
 
-## Step 5: rules for the tables of the next lots
+## Step 5: rules for the tables to come
 
-Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
+Learned from the Codecov schema, so that the next features do not undo this plan:
 
 - **No enable flag**, per organization, per repository or per offer. A module that needs a setting reads
   `.cihub.yaml` (`specs/CONFIGURATION.md`).
-- **Typed hourly tables for the time series** (lot 11a): `an_hourly_conclusions`, `an_hourly_durations` and
+- **Typed hourly tables for the time series**: `an_hourly_conclusions`, `an_hourly_durations` and
   `an_hourly_checks`, keyed by queue and hour, behind `AnalyticsStore`. A single `measurements (name, bucket,
   value)` table would write the reason, the check and the bucket of a histogram into `name`, outside the closed
   vocabulary (decided October 15, 2026, by the project lead). Codecov has eight aggregate tables (hourly and
   daily, crossed with repository, branch and test); a daily grain comes only if a range needs it.
-- **No `outbox` table** (lot 11): `events` is the outbox. A consumer keeps a cursor per queue (`seq` is per
+- **No `outbox` table**: `events` is the outbox. A consumer keeps a cursor per queue (`seq` is per
   queue), and reads the events after it. One table less and no double write.
-- **Flaky tests** (lot 14): `ft_tests` keyed by `test_id bytea`, a 128-bit hash of `(suite, class, name)`, as
+- **Flaky tests**: `ft_tests` keyed by `test_id bytea`, a 128-bit hash of `(suite, class, name)`, as
   Codecov does; `ft_results` partitioned by month like `events`, with `outcome = 'flaky_fail'` written at
   ingestion so that the `FlakeOracle` reads one column; `ft_flakes` as intervals (`started_at`, `ended_at NULL`
   while flaky, `pass_streak`); one `ft_rollups`. Raw JUnit and OTLP payloads go to `ft_uploads bytea` with a
@@ -165,7 +165,7 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 - **One CIHub comment per PR**. Codecov's `Pull` has `commentid`, `bundle_analysis_commentid` and
   `sentry_commentid`: one column per module. A module writes a section of the comment of `pr_comments`, or
   `pr_comments` gains a `module` column in its key; never a column per module.
-- **A setup is a cache of reads of the SCM** (lot 16): `queue_setups` (per queue) and `repo_setups` (per
+- **A setup is a cache of reads of the SCM**: `queue_setups` (per queue) and `repo_setups` (per
   repository, its default branch and its file, with the enum `repo_config_state`) hold one row per subject,
   outside the log, as `pr_titles`; no state of a queue depends on them. A repository that the SCM no longer lists
   keeps its row with `repos.removed_at`: its queues keep their log.
@@ -186,7 +186,7 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 
 ## Order, verification, documents
 
-Order: step 1, then 2, 3 and 4 in one change each, step 5 as the lots arrive. Each change rewrites the
+Order: step 1, then 2, 3 and 4 in one change each, step 5 as the features arrive. Each change rewrites the
 migration files that create the objects (no new file for a drop), then `mise run db:reset`.
 
 Verification for each change:
@@ -198,8 +198,8 @@ Verification for each change:
 3. For step 2 (`queue_leases`): the two-owner lease test; for `queue_snapshots`: the replay test
    `a_replay_of_the_log_rebuilds_the_same_projections` and the partition pruning tests.
 
-Documents updated in the same change: `specs/DATA_MODEL.md` (rows), the "Tracking" block of the current lot in
-`specs/LOTS.md`, `specs/SECURITY.md` (roles arrive with lot 10), `specs/API.md` (`metrics:read`,
+Documents updated in the same change: `specs/DATA_MODEL.md` (rows), `specs/SECURITY.md` (roles arrive with the
+dashboard), `specs/API.md` (`metrics:read`,
 `AuditEntry.before`), `AGENTS.md` (principle IX).
 
 ## Result

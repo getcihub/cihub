@@ -336,7 +336,7 @@ struct Work<'a> {
 
 impl Work<'_> {
     /// What the delivery asks: a fact that it holds, or a job that reads
-    /// what it does not hold. The other events wait for their lots. Returns
+    /// what it does not hold. The other events are ignored. Returns
     /// `false` for a delivery that waits for the next reconciliation: a check
     /// reported on a test branch whose assembly fact has not come yet, or a
     /// push on the target while a merge of the queue is in flight.

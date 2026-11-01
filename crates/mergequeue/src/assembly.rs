@@ -1,4 +1,4 @@
-//! The jobs of the test cycle (lot 6). `assemble_test_branch` resolves the
+//! The jobs of the test cycle. `assemble_test_branch` resolves the
 //! required statuses of a run, builds its test branch and gives back
 //! `test_branch.assembled` or `test_branch.assembly_failed`; `cleanup_test_branch`
 //! closes the draft PR and deletes the branches of a run that ended. Each one

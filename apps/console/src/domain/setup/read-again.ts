@@ -6,7 +6,7 @@ export const READ_AGAIN_FOR_MS = 60_000;
 /**
  * The `refetchInterval` of a read that a page follows while it waits: every 2 seconds while `isWaiting` says so
  * of its last answer, for 60 seconds at most after `since`. The dashboard polls nothing else but the Health; the
- * stream says the rest (`specs/LOTS.md`, lot 16).
+ * stream says the rest.
  */
 export function readAgainWhile<T>(
   isWaiting: (data: T | undefined) => boolean,

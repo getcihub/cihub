@@ -7065,7 +7065,7 @@
               "object",
               "null"
             ],
-            "description": "The targets that the tested PRs change (lot 13); `null` until then."
+            "description": "The targets that the tested PRs change; `null` until the `parallel` strategy."
           },
           "last_report_at": {
             "type": [

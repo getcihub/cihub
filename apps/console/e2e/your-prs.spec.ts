@@ -1,4 +1,4 @@
-// The exit criterion of lot 10c (specs/LOTS.md): a person creates a queue by
+// A person creates a queue by
 // the first `/cihub merge`, submits a PR from the dashboard and follows it in
 // "Your pull requests" until the merge; a member pauses nothing; the comment
 // of the PR links to its page.

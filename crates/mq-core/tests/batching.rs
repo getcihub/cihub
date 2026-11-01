@@ -548,7 +548,7 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
     assert_replays(&w);
 }
 
-/// The exit criterion of lot 12 on the bisection: for each size of batch and
+/// The bisection: for each size of batch and
 /// each place of the planted failure, the bisection isolates the failing PR in
 /// at most log2(size) rounds of runs, rounded up, evicts it, and merges the
 /// others.

@@ -12,7 +12,7 @@ import { useSignOut } from "@/hooks/use-sign-out";
  * The API answers 404 on an organization where the person has no role, or
  * that does not exist: the page says so, and offers another organization of
  * the person. An organization that the App left keeps its members: its
- * queues say that the access is lost (lot 10b).
+ * queues say that the access is lost.
  */
 export function OrgLostPage({ me, org }: { me: Me; org: string }) {
   const { startSignOut, hasSignOutFailed } = useSignOut();

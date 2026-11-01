@@ -246,7 +246,7 @@ mod tests {
 
     use super::*;
 
-    /// A row of a table in `specs/LOTS.md`: states before, state after, and
+    /// A row of the table of the allowed transitions: states before, state after, and
     /// the reasons, written as the stored names. A name that ends with `*`
     /// is a prefix.
     type Row<S> = (&'static [Option<S>], S, &'static [&'static str]);
