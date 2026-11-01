@@ -506,6 +506,64 @@ fn an_outside_push_delivered_after_the_own_push_restarts_the_groups() {
         w.state(2),
         w.snapshot.target.valid_bases
     );
+    assert!(decided_with(&w, Reason::ManualPushToTargetBranch));
+    assert_replays(&w);
+}
+
+#[test]
+fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
+    let mut w = World::new(settings(window(3)));
+    let base = w.snapshot.target.head.as_ref().unwrap().value.clone();
+    for pr in 1..=3 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=3 {
+        w.report(pr, CheckConclusion::Success);
+    }
+    let user = Actor::User {
+        user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+    };
+
+    for (pr, merged_sha) in [(1, "own1"), (2, "own2")] {
+        let merges = w.reconcile().desired.merges;
+        let item_id = merges.iter().find(|m| m.pr_number == pr).unwrap().item_id;
+        w.fact(
+            Actor::System,
+            EventKind::MergeSucceeded {
+                item_id,
+                merged_sha: merged_sha.into(),
+            },
+        );
+    }
+    w.fact(
+        Actor::System,
+        EventKind::TargetPushed {
+            before: None,
+            after: "own2".into(),
+            sender_id: None,
+        },
+    );
+    for (before, after) in [(base.as_str(), "own1"), ("own1", "own2")] {
+        w.fact(
+            user.clone(),
+            EventKind::TargetPushed {
+                before: Some(before.into()),
+                after: after.into(),
+                sender_id: None,
+            },
+        );
+    }
+
+    let merges = w.reconcile().desired.merges;
+
+    assert!(
+        merges.iter().any(|m| m.pr_number == 3),
+        "PR 3 restarted: state {:?}, valid bases {:?}",
+        w.state(3),
+        w.snapshot.target.valid_bases
+    );
+    assert_replays(&w);
 }
 
 #[test]

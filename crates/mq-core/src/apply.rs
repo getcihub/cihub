@@ -446,7 +446,8 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
 /// commits came in between, so the bases tested so far no longer hold. A push
 /// whose `before` is a past head and whose `after` the queue never saw is such
 /// an outside push delivered late: it invalidates the bases but does not move
-/// the head back.
+/// the head back. A push with such a `before` whose `after` is a SHA of the
+/// queue is a late push of the queue and changes nothing.
 fn target_pushed(
     snapshot: &mut Snapshot,
     event: &Event,
@@ -465,6 +466,10 @@ fn target_pushed(
     }
 
     if before.is_some_and(|b| Some(b) != head && past(b)) {
+        if is_known_own {
+            return Outcome::Ignored;
+        }
+
         target.valid_bases.clear();
         retain_bases(snapshot);
 
