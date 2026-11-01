@@ -27,7 +27,7 @@ Design rules on which the rest of the specification rests:
 - **Scheduled SCM budget.** Each connection has a token bucket fed by the rate limit headers, and each job a class: `interactive` (commands, statuses, comments), `merge`, `speculate` (test branches), `repair` (re-reads). When the budget drops, speculation is reduced first, merge last; nothing is lost, everything is deferred.
 - **Repair loop.** Independently of webhooks, each queue periodically re-reads what matters (live PRs, checks of the runs in progress, head of the target branch, existence of the test refs) at an adaptive interval of 30 s to 10 min depending on activity, and injects what it observes into the inbox. A lost webhook costs at most one interval.
 - **Explicit degraded modes.** Per connection: `normal`, `throttled` (low budget: no new speculation), `scm_unavailable` (nothing goes out, everything accumulates, the repair loop tests the recovery), `paused` (human decision). The mode is visible in the interface and the API, with its cause.
-- **Transport on Postgres.** Inbox and jobs are Postgres tables, read and written by the functions of `cihub-platform` in the caller's transaction: a delivery is deleted from the inbox together with the writing of the facts it establishes. The log `events` is the outbox: a consumer reads it from its cursor per queue (Lot 11). No broker in v1.
+- **Transport on Postgres.** Inbox and jobs are Postgres tables, read and written by the functions of `cihub-platform` in the caller's transaction: a delivery is deleted from the inbox together with the writing of the facts it establishes. The log `events` is the outbox: a consumer reads it from its cursor per queue. No broker in v1.
 - **Isolation between organizations.** Row level security, quotas per organization on the inbox and the jobs, and fair scheduling of the workers: a noisy organization slows down its own queues, not those of others.
 
 What scales, and how:
@@ -41,15 +41,15 @@ What scales, and how:
 | History and analytics    | Row volume                                                               | Monthly partitions, fact tables, then ClickHouse behind the `AnalyticsStore` trait                                                                                               |
 | Organizations            | Isolation and fairness                                                   | RLS, quotas, fair scheduling; one instance serves hundreds of organizations                                                                                                  |
 
-Target order of magnitude for a standard instance: 1,000 organizations, 20,000 repositories, 5,000 queues, 50,000 submissions per day, one to two thousand webhooks per minute at peak, on one Postgres primary with read replicas. The split into lots is described in [LOTS.md](LOTS.md).
+Target order of magnitude for a standard instance: 1,000 organizations, 20,000 repositories, 5,000 queues, 50,000 submissions per day, one to two thousand webhooks per minute at peak, on one Postgres primary with read replicas.
 
 ## Rust workspace and crates
 
-A single repository contains the whole project: the Cargo workspace, then, with their lots, the dashboard, the
+A single repository contains the whole project: the Cargo workspace, the dashboard, the
 GitHub action, the Helm chart and the migrations. The workspace (edition 2024, Rust pinned by `mise.toml`)
 produces two binaries: `cihub-server` starts and administers an instance, and `cihub`, the command line that a
 person or a CI installs, talks to its API with `cihub login` and `cihub queue`. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
-a single version, that of the release. A crate is created when a lot needs it, after validation; the list below is the target, and the "Lot" column says when each crate arrives.
+a single version, that of the release. A crate is created when the work needs it, after validation; the list below is the target, and the "State" column says which crates exist.
 
 ```
 Cargo.toml               workspace: members, [workspace.package], [workspace.dependencies], [workspace.lints]
@@ -76,10 +76,10 @@ crates/
   client/                cihub-client         (exists)
   cli/                   cihub-cli            (exists, the cihub binary)
   server/                cihub-server         (exists, the cihub-server binary)
-  ...                    the other crates of the table, with their lot
-migrations/              Postgres migrations embedded in the cihub-server binary (Lot 2)
+  ...                    the other crates of the table
+migrations/              Postgres migrations embedded in the cihub-server binary
 apps/
-  console/               dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs (Lots 10a to 10d)
+  console/               dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs
   website/               the website cihub.io and its documentation (Next.js, Fumadocs)
 packages/
   theme/                 @cihub/theme: the tokens and the Tailwind theme, in CSS (console, website)
@@ -88,28 +88,28 @@ packages/
   ui/                    @cihub/ui: the components of the console and their hooks
 ```
 
-| Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | --- | ------ |
-| `cihub-domain`     | Typed ULID identifiers, entities, closed vocabulary, `Event` envelope, transition tables (pure)                                                                        | —                                                                | 1   | exists |
-| `cihub-conditions` | Conditions: attributes, operators, check of the values, evaluation on a PR context (pure); `cihub-config` reads their YAML                                             | `domain`                                                         | 8   | exists |
-| `cihub-config`     | Model of `.cihub.yaml`, strategy table, merge of the sources with the source of each setting, ranges (pure)                                                            | `domain`, `conditions`                                           | 8   | exists |
-| `cihub-mq-core`    | `apply`, merge graph, predecessors, validity of the runs, adaptive window, batches, bisection, failure budget, `plan`, `check` (pure)                                  | `domain`, `config`                                               | 1   | exists |
-| `cihub-contracts`  | `FlakeOracle` trait and the neutral oracle that answers "unknown" (pure)                                                                                               | `domain`                                                         | 14  | target |
-| `cihub-flaky-core` | Detection signals, `stable` / `suspect` / `flaky` / `broken` classification, `case_key` (pure)                                                                         | `domain`                                                         | 14  | target |
-| `cihub-store`      | Postgres pool, transactions of an organization or of the system (RLS), tenancy, log and partitions, the cipher and the hash of the secrets, embedded migrations, test of the Postgres enums; no table of a module | `domain`                                                         | 2   | exists |
-| `cihub-telemetry`  | Logs, then OpenTelemetry traces and Prometheus registry                                                                                              | —                                                                | 2   | exists |
-| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance; sync of the installations of the App into organizations and connections, and reading of the repositories of the connections and of the members of their accounts; the users, their roles, their token on the SCM and their permissions (Lot 10a); API tokens, their creation by an operator and their authentication; `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), log cursors (Lot 11) | `domain`, `store`, `scm`                       | 3–5 | exists |
-| `cihub-scm`        | `Scm` trait, normalized SCM types, call priority classes; GitHub simulator with fault injection, `sim` feature | `domain`                                                         | 4   | exists |
-| `cihub-github`     | App auth, installation tokens, REST and GraphQL client, budget per connection, degraded modes, HMAC verification and translation of webhooks into facts             | `scm`, `domain`                                                  | 4   | exists |
-| `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage); token authentication, rate limit, `/orgs/{org}/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9); then the sessions and their table, CSRF, device codes and dashboard (Lots 10a to 10d) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
-| `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors (Lots 5 and 6); `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands (Lot 9) | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm`, `conditions`; `contracts` at Lot 14, `analytics` at Lot 11 | 5   | exists |
-| `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature                                                                                                            | `domain`                                                         | 9   | exists |
-| `cihub-client`     | Typed client of the public API, for `cihub queue` and the end-to-end tests                                                                                             | `api-types`                                                      | 9   | exists |
-| `cihub-analytics`  | Facts derived from the log and Health of a queue on Postgres (Lot 11a); `AnalyticsStore` trait with ClickHouse (Lot 15)                                                | `domain`, `store`                                                | 11a | exists |
-| `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by `cihub`                                                                                                | `domain`                                                         | 14  | target |
-| `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | target |
-| `cihub-cli`        | `cihub` binary, the command line of the users: `login` and `queue`, one file per command; no server crate                                                              | `client`, `api-types`, `domain`                                  | 9   | exists |
-| `cihub-server`     | `cihub-server` binary: `start`, `migrate`, `token`, one file per command and per role, configuration file, module registration                                        | the server crates                                                | 2   | exists |
+| Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | State  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------ |
+| `cihub-domain`     | Typed ULID identifiers, entities, closed vocabulary, `Event` envelope, transition tables (pure)                                                                        | —                                                                | exists |
+| `cihub-conditions` | Conditions: attributes, operators, check of the values, evaluation on a PR context (pure); `cihub-config` reads their YAML                                             | `domain`                                                         | exists |
+| `cihub-config`     | Model of `.cihub.yaml`, strategy table, merge of the sources with the source of each setting, ranges (pure)                                                            | `domain`, `conditions`                                           | exists |
+| `cihub-mq-core`    | `apply`, merge graph, predecessors, validity of the runs, adaptive window, batches, bisection, failure budget, `plan`, `check` (pure)                                  | `domain`, `config`                                               | exists |
+| `cihub-contracts`  | `FlakeOracle` trait and the neutral oracle that answers "unknown" (pure)                                                                                               | `domain`                                                         | target |
+| `cihub-flaky-core` | Detection signals, `stable` / `suspect` / `flaky` / `broken` classification, `case_key` (pure)                                                                         | `domain`                                                         | target |
+| `cihub-store`      | Postgres pool, transactions of an organization or of the system (RLS), tenancy, log and partitions, the cipher and the hash of the secrets, embedded migrations, test of the Postgres enums; no table of a module | `domain`                                                         | exists |
+| `cihub-telemetry`  | Logs, then OpenTelemetry traces and Prometheus registry                                                                                              | —                                                                | exists |
+| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance; sync of the installations of the App into organizations and connections, and reading of the repositories of the connections and of the members of their accounts; the users, their roles, their token on the SCM and their permissions; API tokens, their creation by an operator and their authentication; `Module` contract and its routes, `problem+json` error and route authorization, log cursors | `domain`, `store`, `scm`                       | exists |
+| `cihub-scm`        | `Scm` trait, normalized SCM types, call priority classes; GitHub simulator with fault injection, `sim` feature | `domain`                                                         | exists |
+| `cihub-github`     | App auth, installation tokens, REST and GraphQL client, budget per connection, degraded modes, HMAC verification and translation of webhooks into facts             | `scm`, `domain`                                                  | exists |
+| `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage); token authentication, rate limit, `/orgs/{org}/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json`; then the sessions and their table, CSRF, device codes and dashboard | `domain`, `store`, `platform`, `github`, `api-types` | exists |
+| `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors; `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm`, `conditions`; `analytics`; `contracts` with the flaky tests | exists |
+| `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature                                                                                                            | `domain`                                                         | exists |
+| `cihub-client`     | Typed client of the public API, for `cihub queue` and the end-to-end tests                                                                                             | `api-types`                                                      | exists |
+| `cihub-analytics`  | Facts derived from the log and Health of a queue on Postgres; `AnalyticsStore` trait with ClickHouse (to come)                                                | `domain`, `store`                                                | exists |
+| `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by `cihub`                                                                                                | `domain`                                                         | target |
+| `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | target |
+| `cihub-cli`        | `cihub` binary, the command line of the users: `login` and `queue`, one file per command; no server crate                                                              | `client`, `api-types`, `domain`                                  | exists |
+| `cihub-server`     | `cihub-server` binary: `start`, `migrate`, `token`, one file per command and per role, configuration file, module registration                                        | the server crates                                                | exists |
 
 Three rules structure the split, and each one is checked in CI rather than left to discipline:
 
@@ -145,7 +145,7 @@ which starts loops whose code is in the library crates.
 | `web`       | HTTP server: API, webhooks, OTLP, dashboard     | `cihub-web`         |
 | `scheduler` | reconciliation loop of the queues               | `cihub-mergequeue`      |
 | `worker`    | execution of the modules' jobs                  | `cihub-platform`        |
-| `notifier`  | subscriptions of the modules to the log: the facts of the analytics (Lot 11a), then the webhooks (Lot 11c) | `cihub-platform` |
+| `notifier`  | subscriptions of the modules to the log: the facts of the analytics, then the webhooks | `cihub-platform` |
 
 `main` reads the configuration, starts the logs and the Postgres pool, checks that the schema is up to date, then starts one
 `tokio` task per role in a `JoinSet`, with a single `CancellationToken`. On `SIGTERM`, it cancels the token:
@@ -188,7 +188,7 @@ queue never runs in parallel with itself and waits on no I/O other than Postgres
 handles hundreds of queues. Between two passes, a replica waits for a notification until the next tick that is
 not due yet, between 1 and 30 seconds, so that a `wake_at` is served on time.
 
-A reconciliation (`cihub-mergequeue`, Lots 5 and 6) happens in a single transaction: load the last
+A reconciliation (`cihub-mergequeue`) happens in a single transaction: load the last
 snapshot and the events that follow it, write the facts of `queue_inbox` that change the state with their
 projections, then those of the queue's deliveries (a check delivery that arrives before the assembly fact of
 its run waits for the next reconciliation), run `plan`, write its decisions, request the jobs of the

@@ -1,5 +1,5 @@
 //! The `notifier` role: the subscriptions of the modules to the logs of the
-//! queues, the facts of the analytics first (lot 11a).
+//! queues, the facts of the analytics first.
 
 use anyhow::Context;
 use cihub_platform::run_subscriptions;

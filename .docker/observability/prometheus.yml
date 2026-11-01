@@ -4,7 +4,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  # /metrics comes with lot 11b (specs/LOTS.md): until then, the target is down.
+  # /metrics comes with the Prometheus metrics: until then, the target is down.
   - job_name: cihub
     static_configs:
       - targets: ["cihub-server:8081"]

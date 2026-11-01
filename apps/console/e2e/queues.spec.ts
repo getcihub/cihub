@@ -1,4 +1,4 @@
-// The exit criterion of lot 10b (specs/LOTS.md): the cards of the queues and the
+// The cards of the queues and the
 // page of a queue, with the PRs that `ada` submitted by comment on the
 // simulator, their title, author and position, and the runs of the graph.
 import { type Page, expect, test } from "@playwright/test";

@@ -1,4 +1,4 @@
-// The exit criterion of lot 10a (specs/LOTS.md): the sign-in through the
+// The sign-in through the
 // simulator, the role of a member, the isolation of the organizations, a
 // refused sign-in and a person without an organization.
 import { type Page, expect, test } from "@playwright/test";

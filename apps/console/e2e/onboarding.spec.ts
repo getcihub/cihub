@@ -1,4 +1,4 @@
-// The exit criterion of lot 16 (specs/LOTS.md): a person without an organization
+// A person without an organization
 // installs the App, comes back through the Setup URL, sees "Connecting" then the
 // setup of each repository; a fixed rule and "Check again" make a repository
 // ready, and the first `/cihub merge` starts its queue without a reload.

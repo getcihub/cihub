@@ -2,7 +2,7 @@
 //! webhooks of the SCM: it checks the signature, stores the delivery without
 //! routing it, and answers within 2 s; the API v1 under `/api/v1`, with the
 //! routes of the modules; the sign-in and the sessions of the dashboard, and
-//! its files, embedded at the build (lot 10a).
+//! its files, embedded at the build.
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.

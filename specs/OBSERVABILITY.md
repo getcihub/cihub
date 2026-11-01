@@ -26,7 +26,7 @@ decisions.
 
 The keys are those of the configuration file (`specs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
 
-A `web` replica that loses its connection to `cihub_queue_changed` writes `warn` (`queue_changes.not_heard`, or `queue_changes.connection_lost`): the open pages then read everything again. No metric counts the open streams yet (Lot 11).
+A `web` replica that loses its connection to `cihub_queue_changed` writes `warn` (`queue_changes.not_heard`, or `queue_changes.connection_lost`): the open pages then read everything again. No metric counts the open streams yet.
 
 ### Format
 

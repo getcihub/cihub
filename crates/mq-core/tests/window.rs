@@ -1,4 +1,4 @@
-//! The adaptive window: exit criterion of lot 8. A `pipelined` queue under 20 %
+//! The adaptive window. A `pipelined` queue under 20 %
 //! of failing PRs closes its window to the floor, then opens it again once the
 //! PRs pass.
 

@@ -1,5 +1,5 @@
 //! What keeps a PR out of its queue, submitted or not: the reasons that the
-//! PR alone gives, which its conditions status shows (lot 9b).
+//! PR alone gives, which its conditions status shows.
 
 use std::collections::BTreeSet;
 

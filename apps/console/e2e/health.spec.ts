@@ -1,4 +1,4 @@
-// The exit criterion of lot 11a (specs/LOTS.md): the Health of a queue shows a
+// The Health of a queue shows a
 // merged PR and a failed one, from the facts that the notifier derives from the
 // log.
 import { type Page, expect, test } from "@playwright/test";

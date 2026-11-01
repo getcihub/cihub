@@ -23,7 +23,7 @@ sequenceDiagram
 
 Two trigger modes are offered per queue. In **draft PR mode** (the default), a draft PR from the test branch to the target branch is opened, so the workflows on `pull_request` run without modification; the CI tells queue runs apart by the `cihub-merge/` head ref, and the body of the draft PR carries the run identifier and the numbers of the tested PRs. In **push mode**, no PR is created and the CI must listen to `push` on `cihub-merge/**`; this avoids preview deployments and PR-triggered bots at each run. In both modes, the test branch is deleted at the end of the run, after a configurable retention (`keep_test_branches_minutes`, 0 by default) for debugging.
 
-The branch names are frozen (Lot 6, `cihub-domain`): `<prefix>-temp/pr-<N>/<run_id>` for the temporary
+The branch names are frozen (`cihub-domain`): `<prefix>-temp/pr-<N>/<run_id>` for the temporary
 branch where the heads are merged, `<prefix>-merge/pr-<N>/<run_id>` for the test branch, where `N` is the
 number of the first PR of the group and `run_id` the identifier of the run (`run_…`), with `branch_prefix`
 (`cihub` by default). The name of the test branch leads to its run: a check reported on it is routed to its

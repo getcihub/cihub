@@ -326,7 +326,7 @@ reason no longer holds.
   then forgets it; the role in the organization gives the access to every repository of it.
 - **Why not**: a member of an organization then reads in CIHub a private repository that GitHub hides from them,
   and keeps the access that they had at the sign-in for the 14 days of the session. CIHub keeps the token of the
-  person, encrypted, refreshes it, and reads with it what the person reaches (lot 16, October 17, 2026).
+  person, encrypted, refreshes it, and reads with it what the person reaches (October 17, 2026).
 - **Would change if**: the token of an installation can list the repositories that a person reaches.
 
 ### Forget the permissions of a person at their sign-out

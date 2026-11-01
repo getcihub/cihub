@@ -50,7 +50,7 @@ closed_enum! {
         /// The push of the test branch, for a CI that runs on pushes.
         Push,
         /// No test branch: the PR branch itself is updated onto the target
-        /// (a later lot; refused until then).
+        /// (later; refused until then).
         Inplace,
     }
 }

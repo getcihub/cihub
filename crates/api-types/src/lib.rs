@@ -1473,7 +1473,7 @@ pub struct Run {
     pub conflict_culprit: Option<ConflictCulprit>,
     /// Every check and status observed on `test_sha`.
     pub checks: Vec<RunCheck>,
-    /// The targets that the tested PRs change (lot 13); `null` until then.
+    /// The targets that the tested PRs change; `null` until the `parallel` strategy.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
     pub impacted_targets: Option<Value>,
     /// The live runs whose predecessors hold a PR of this run.

@@ -1586,7 +1586,7 @@ fn read_job(n: u64) -> Job {
     }
 }
 
-/// The lot 4 chain, end to end: an executor calls GitHub through the
+/// The chain of a rate limit, end to end: an executor calls GitHub through the
 /// connection, GitHub answers 429, the pause reaches `scm_connections`, and
 /// no job of the connection goes out before the reset.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1742,7 +1742,7 @@ async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
     .unwrap()
 }
 
-/// The exit criterion of lot 6 (`specs/LOTS.md`): ten PRs, two with a red CI,
+/// The test cycle: ten PRs, two with a red CI,
 /// one in conflict with a PR ahead of it, one whose CI never reports. Each
 /// PR is tested on top of its predecessors, each run ends with its reason,
 /// the PRs behind a failed one restart without it, and the merge job merges
@@ -5555,7 +5555,7 @@ async fn a_pr_opened_before_its_queue_is_welcomed_at_its_next_change(pool: PgPoo
     q.stop().await;
 }
 
-/// Exit criterion of lot 8: a PR cannot change its own conditions. A PR
+/// A PR cannot change its own conditions. A PR
 /// that removes the `queue_conditions` and changes the required statuses in
 /// its own `.cihub.yaml` still waits for the conditions of the file of its
 /// target, and its run requires the statuses of that file.
@@ -6740,7 +6740,7 @@ impl Chaos {
                 .unwrap();
         }
 
-        // The submissions arrive whole: a lost comment is the sweep of lot 4.
+        // The submissions arrive whole: a lost comment is the job of the sweep.
         self.deliver(false).await;
         self.settle().await;
 
@@ -6862,7 +6862,7 @@ impl Chaos {
     }
 }
 
-/// The exit criterion of lot 7 (`specs/RELIABILITY.md`): on each seed, server
+/// Fault injection (`specs/RELIABILITY.md`): on each seed, server
 /// errors and rate limits at random, webhooks lost, sent twice and reordered,
 /// and processes killed at random, each green PR is merged exactly once, in the
 /// order of the queue, and each red PR fails with a reason. `CIHUB_SIM_SEEDS`
@@ -6879,7 +6879,7 @@ async fn fault_injection(pool: PgPool) {
     .await;
 }
 
-/// The same test with the `batched` strategy (lot 12): batches, bisections,
+/// The same test with the `batched` strategy: batches, bisections,
 /// failure depth and optimistic merge under the same faults.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn fault_injection_batched(pool: PgPool) {
@@ -7614,7 +7614,7 @@ async fn event_count(pool: &PgPool) -> i64 {
         .unwrap()
 }
 
-/// The exit criterion of lot 9b: a PR shows from its opening whether it
+/// A PR shows from its opening whether it
 /// would enter its queue, without a submission and without a fact in the log
 /// of the queue; a submitted PR keeps its status until it closes.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

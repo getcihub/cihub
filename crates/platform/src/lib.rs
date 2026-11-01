@@ -1,6 +1,6 @@
 //! Internal transport of CIHub on Postgres: the queue leases, the inbox of the
 //! webhook deliveries, the wake-up of the schedulers, the jobs, their worker
-//! loop, the daily maintenance (lot 3), the budgets of the connections, the
+//! loop, the daily maintenance, the budgets of the connections, the
 //! routing and the sweep of the deliveries, the sync of the installations of
 //! the App into organizations and connections, the read of the repositories
 //! of the connections, the roles of the people who sign in and of the members
