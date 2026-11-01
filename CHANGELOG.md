@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.6.0](https://github.com/getcihub/cihub/compare/v0.5.2...v0.6.0) (2026-11-01)
+
+
+### Features
+
+* **website:** send the visits of the site and the documentation to PostHog ([#212](https://github.com/getcihub/cihub/issues/212)) ([cf9ed31](https://github.com/getcihub/cihub/commit/cf9ed310b695fe9a88beb304e29a75362c7e928f))
+
+
+### Bug Fixes
+
+* **cli:** truncate the lines of a watch to the width of the terminal ([1bf430a](https://github.com/getcihub/cihub/commit/1bf430aadc7e74edc88ca1de4d6ec23414ab20af))
+* **mq-core:** count a push as own only when its before is the head ([b16c271](https://github.com/getcihub/cihub/commit/b16c271b5c8badf7e9c603cd54676279f56f0f0a))
+* **mq-core:** keep an admin pause and a drain across a lost access ([8db6653](https://github.com/getcihub/cihub/commit/8db66539071a8d56cba60ad01c85d0742866e120))
+* **mq-core:** keep urgent behind a tested item and do not own an unplanned merge ([4106481](https://github.com/getcihub/cihub/commit/41064819cc00d8917b018d23da7760fac8893e64))
+
+
+### Continuous Integration
+
+* **release-please:** exclude the website from the release ([ba134f0](https://github.com/getcihub/cihub/commit/ba134f0e1882e82809788f0027666d0336bcf5ab))
+
+
+### Miscellaneous Chores
+
+* **deps:** update dependency @playwright/test to v1.64.1 ([#198](https://github.com/getcihub/cihub/issues/198)) ([09b73ea](https://github.com/getcihub/cihub/commit/09b73ea85c7f3553b5663e7a3572d296653bd7ca))
+* **deps:** update dependency @testing-library/user-event to v14.6.8 ([#199](https://github.com/getcihub/cihub/issues/199)) ([3818c0e](https://github.com/getcihub/cihub/commit/3818c0ecbbf7f84e131406e4baf6399f84d6d817))
+* **deps:** update dependency jsdom to v30.1.3 ([d7ef39b](https://github.com/getcihub/cihub/commit/d7ef39bb617b02ccd2e19200c727023b6a4344af))
+* **deps:** update dependency postcss to v8.5.32 ([fcdd479](https://github.com/getcihub/cihub/commit/fcdd479b7f1feb3cd27dbe050a5c43753bc664e2))
+* **deps:** update dependency rust to v1.99.1 ([13da43b](https://github.com/getcihub/cihub/commit/13da43b3d1d2df84761d562deb69ffe3223905ad))
+* **deps:** update dependency vite to v8.3.5 ([906e64d](https://github.com/getcihub/cihub/commit/906e64dfee1371609038232d69e6840cfa57cb09))
+* **deps:** update dependency vitest to v5.0.5 ([dad4fe0](https://github.com/getcihub/cihub/commit/dad4fe04732498110c444bc5af3e370b2f3a8fe7))
+* **deps:** update grafana/alloy docker tag to v1.21.3 ([709c744](https://github.com/getcihub/cihub/commit/709c744959819d48a1fde9f55e2037a3b5177f5e))
+
 ## [0.5.2](https://github.com/getcihub/cihub/compare/v0.5.1...v0.5.2) (2026-10-31)
 
 
