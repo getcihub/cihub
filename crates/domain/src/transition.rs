@@ -224,14 +224,9 @@ impl Lifecycle for QueueState {
     fn allowed_reasons(from: Option<Self>, to: Self) -> &'static [Reason] {
         use QueueState as S;
         match (from, to) {
-            (Some(S::Running | S::Draining | S::SwitchingModes), S::Paused) => {
-                &[R::AdminRequested, R::AccessLost]
-            }
-            (Some(S::Paused), S::Running) => &[R::AdminRequested, R::AccessRestored],
-            (Some(S::Paused), S::Draining) => &[R::AccessRestored],
-            (Some(S::Running), S::Draining) | (Some(S::Draining), S::Running) => {
-                &[R::AdminRequested]
-            }
+            (Some(S::Running | S::Draining | S::SwitchingModes), S::Paused)
+            | (Some(S::Paused | S::Draining), S::Running)
+            | (Some(S::Running), S::Draining) => &[R::AdminRequested],
             (Some(S::Running), S::SwitchingModes) => &[R::ModeChanged],
             (Some(S::SwitchingModes), S::Running) => &[R::ModeSwitchCompleted],
             _ => &[],
@@ -516,14 +511,9 @@ mod tests {
             (
                 &[Some(S::Running), Some(S::Draining), Some(S::SwitchingModes)],
                 S::Paused,
-                &["admin_requested", "access_lost"],
+                &["admin_requested"],
             ),
-            (
-                &[Some(S::Paused)],
-                S::Running,
-                &["admin_requested", "access_restored"],
-            ),
-            (&[Some(S::Paused)], S::Draining, &["access_restored"]),
+            (&[Some(S::Paused)], S::Running, &["admin_requested"]),
             (&[Some(S::Running)], S::Draining, &["admin_requested"]),
             (&[Some(S::Draining)], S::Running, &["admin_requested"]),
             (&[Some(S::Running)], S::SwitchingModes, &["mode_changed"]),

@@ -132,7 +132,7 @@ function toneOf(queue: Queue): string {
   if (queue.config_error) {
     return "bg-destructive";
   }
-  return queue.state === "running" ? "bg-success" : "bg-warning";
+  return queue.state === "running" && !queue.is_suspended ? "bg-success" : "bg-warning";
 }
 
 export function QueuePicker({

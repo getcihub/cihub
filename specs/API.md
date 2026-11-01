@@ -65,7 +65,8 @@ A queue (`Queue`) carries its `repo`, its `target_branch` and `is_default_branch
 of the repository), its `state` and `mode`, `state_changed_at` (its creation before a
 first change) and `state_changed_by`, the login of the person who asked for the state (`null` when CIHub decided it
 or a token asked for it); `created_at`, when the first command on its branch created it, and `updated_at`, the last change of its state, its mode or its configuration file; the `strategy` of its last valid file; `target_head_sha`, the head of the target branch
-that the log saw last; `is_suspended`, when the installation of the App is suspended or removed, or no longer lists the repository;
+that the log saw last; `is_suspended`, when the installation of the App is suspended or removed, or no longer lists the repository: the queue is
+stopped, and `state` keeps the state that it takes again when the access comes back;
 `has_config_file`, `config_sha` and `config_error`; its counters: `counts` (the current items in each state that is
 not terminal), `merged_last_24h`, `failed_last_24h` and `failed_or_cancelled_last_24h` (the current items that reached
 `merged`, `failed`, or `failed` or `cancelled`, in the 24 hours before the request, not in a calendar day: the ones

@@ -417,8 +417,15 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             snapshot.requested_mode = *after;
             Outcome::Applied
         }
-        EventKind::AccessLost => request(snapshot, event, Request::AccessLost),
-        EventKind::AccessRestored => request(snapshot, event, Request::AccessRestored),
+        EventKind::AccessLost | EventKind::AccessRestored => {
+            let is_access_lost = event.kind == EventKind::AccessLost;
+            if snapshot.is_access_lost == is_access_lost {
+                return Outcome::Ignored;
+            }
+
+            snapshot.is_access_lost = is_access_lost;
+            Outcome::Applied
+        }
         EventKind::ItemTransitioned { .. }
         | EventKind::ItemReadinessChanged { .. }
         | EventKind::QueueRenumbered { .. }
@@ -764,7 +771,6 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             check_transition(Some(*from), *to, *reason)?;
 
             snapshot.state = *to;
-            snapshot.state_before_access_lost = (*reason == Reason::AccessLost).then_some(*from);
             if *reason == Reason::ModeSwitchCompleted {
                 snapshot.mode = snapshot.requested_mode;
             }
@@ -835,10 +841,6 @@ fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             Reason::AdminRequested,
         )
         .is_ok(),
-        Request::AccessLost => snapshot.state != QueueState::Paused,
-        Request::AccessRestored => {
-            snapshot.state == QueueState::Paused && snapshot.state_before_access_lost.is_some()
-        }
     }
 }
 

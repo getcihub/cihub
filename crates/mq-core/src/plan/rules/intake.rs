@@ -15,8 +15,8 @@ use crate::plan::events::{
 use crate::plan::rules::formation::{direct_merge, merge_ready, window_to};
 use crate::plan::rules::readiness::not_ready_items;
 
-/// A decision for the first request that can receive one. In `paused`,
-/// only the requests on the queue itself.
+/// A decision for the first request that can receive one. In a stopped
+/// queue, only the requests on the queue itself.
 pub(in crate::plan) fn requests(
     s: &Snapshot,
     _: &QueueSettings,
@@ -25,10 +25,10 @@ pub(in crate::plan) fn requests(
 ) -> Option<Step> {
     let (id, request) = s.requests.iter().find(|(_, r)| match r {
         Request::Submit { pr_number, .. } => {
-            s.state != QueueState::Paused && s.current_item(*pr_number).is_none()
+            !s.is_stopped() && s.current_item(*pr_number).is_none()
         }
-        Request::Control(_) | Request::AccessLost | Request::AccessRestored => true,
-        _ => s.state != QueueState::Paused,
+        Request::Control(_) => true,
+        _ => !s.is_stopped(),
     })?;
 
     let item = |item_id: &ItemId| s.items.get(item_id);
@@ -107,17 +107,6 @@ pub(in crate::plan) fn requests(
             item_to(item(item_id)?, ItemState::Failed, reason)
         }
         Request::Control(control) => queue_to(s, control.target(), Reason::AdminRequested),
-        Request::AccessLost => queue_to(s, QueueState::Paused, Reason::AccessLost),
-        Request::AccessRestored => {
-            // A queue that was switching modes restarts in `running`, which
-            // switches again when the modes still differ.
-            let to = match s.state_before_access_lost {
-                Some(QueueState::Draining) => QueueState::Draining,
-                _ => QueueState::Running,
-            };
-
-            queue_to(s, to, Reason::AccessRestored)
-        }
     };
     Step::one(Some(*id), kind)
 }

@@ -8,11 +8,10 @@ use cihub_config::Setting;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, EventKind, ItemState,
     JobError, Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason,
-    RunStatus, UserId,
+    RunStatus,
 };
 use cihub_mq_core::{CheckRead, Head, Outcome, Read};
 use common::{World, head, settings, transitioned, window};
-use ulid::Ulid;
 
 fn world() -> World {
     World::new(settings(window(2)))
@@ -700,72 +699,123 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
     assert!(decided_with(&w, Reason::QueueDraining));
 
-    w.fact(Actor::System, EventKind::AccessLost);
-    assert_eq!(w.snapshot.state, QueueState::Paused);
-
-    w.fact(Actor::System, EventKind::AccessRestored);
-    assert_eq!(w.snapshot.state, QueueState::Draining);
-
     assert_replays(&w);
 }
 
 #[test]
-fn access_restored_on_a_queue_that_never_lost_access_changes_nothing() {
+fn a_lost_access_stops_decisions_and_keeps_submissions() {
     let mut w = world();
-
+    w.submit(1, Priority::MEDIUM);
     assert_eq!(
         w.fact(Actor::System, EventKind::AccessRestored),
         Outcome::Ignored
     );
+
+    assert_eq!(
+        w.fact(Actor::System, EventKind::AccessLost),
+        Outcome::Applied
+    );
+    assert_eq!(
+        w.fact(Actor::System, EventKind::AccessLost),
+        Outcome::Ignored
+    );
     assert_eq!(w.snapshot.state, QueueState::Running);
+    assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
+    assert_eq!(w.state(2), None, "no item without the access");
 
-    w.fact(
-        Actor::System,
-        EventKind::QueueControlRequested {
-            control: QueueControl::Drain,
-        },
+    w.assemble_all();
+    let run = w.run(1).unwrap();
+    assert_eq!(
+        w.snapshot.runs[&run].status,
+        RunStatus::Assembling,
+        "no decision without the access"
     );
-    w.fact(Actor::System, EventKind::AccessRestored);
-    assert_eq!(w.snapshot.state, QueueState::Draining);
+
+    assert_eq!(
+        w.fact(Actor::System, EventKind::AccessRestored),
+        Outcome::Applied
+    );
+    assert_eq!(w.snapshot.runs[&run].status, RunStatus::InProgress);
+    assert_eq!(
+        w.state(2),
+        Some(ItemState::Testing),
+        "submitted at the return"
+    );
 
     assert_replays(&w);
 }
 
 #[test]
-fn access_restored_keeps_an_admin_pause() {
-    let mut w = world();
-    let admin = Actor::User {
-        user_id: UserId::from_ulid(Ulid(1)),
-    };
-    w.fact(
-        admin,
-        EventKind::QueueControlRequested {
-            control: QueueControl::Pause,
-        },
-    );
-    assert_eq!(w.snapshot.state, QueueState::Paused);
+fn the_access_comes_back_to_the_state_that_the_admin_chose() {
+    use EventKind::{AccessLost as Lost, AccessRestored as Restored};
+    use QueueControl::{Drain, Pause, Resume};
+    let control = |c| EventKind::QueueControlRequested { control: c };
+    let cases = [
+        (vec![control(Pause), Lost, Restored], QueueState::Paused),
+        (vec![control(Drain), Lost, Restored], QueueState::Draining),
+        (vec![Lost, control(Pause), Restored], QueueState::Paused),
+        (vec![Lost, control(Drain), Restored], QueueState::Draining),
+        (
+            vec![control(Pause), Lost, control(Resume), Restored],
+            QueueState::Running,
+        ),
+    ];
 
+    for (facts, expected) in cases {
+        let mut w = world();
+
+        for fact in &facts {
+            w.fact(Actor::System, fact.clone());
+        }
+
+        assert_eq!(w.snapshot.state, expected, "{facts:?}");
+        assert!(!w.snapshot.is_access_lost);
+        assert_replays(&w);
+    }
+}
+
+#[test]
+fn a_resume_without_the_access_waits_for_the_access() {
+    let mut w = world();
+    let control = |c| EventKind::QueueControlRequested { control: c };
+    w.fact(Actor::System, control(QueueControl::Pause));
     w.fact(Actor::System, EventKind::AccessLost);
+
+    w.fact(Actor::System, control(QueueControl::Resume));
+    w.submit(1, Priority::MEDIUM);
+
+    assert_eq!(w.snapshot.state, QueueState::Running);
+    assert_eq!(w.state(1), None, "no item without the access");
+
     w.fact(Actor::System, EventKind::AccessRestored);
-    assert_eq!(w.snapshot.state, QueueState::Paused);
+    assert_eq!(w.state(1), Some(ItemState::Testing));
 
     assert_replays(&w);
 }
 
 #[test]
-fn access_lost_then_restored_keeps_a_drain() {
+fn a_mode_switch_goes_on_when_the_access_comes_back() {
     let mut w = world();
+    w.submit(1, Priority::MEDIUM);
     w.fact(
         Actor::System,
-        EventKind::QueueControlRequested {
-            control: QueueControl::Drain,
+        EventKind::QueueSettingsChanged {
+            before: QueueMode::Single,
+            after: QueueMode::Parallel,
         },
     );
-    assert_eq!(w.snapshot.state, QueueState::Draining);
+    assert_eq!(w.snapshot.state, QueueState::SwitchingModes);
 
     w.fact(Actor::System, EventKind::AccessLost);
+    assert_eq!(w.snapshot.state, QueueState::SwitchingModes);
+
     w.fact(Actor::System, EventKind::AccessRestored);
-    assert_eq!(w.snapshot.state, QueueState::Draining);
+    w.assemble_all();
+    w.report(1, CheckConclusion::Success);
+    w.merge_all();
+
+    assert_eq!(w.snapshot.state, QueueState::Running);
+    assert_eq!(w.snapshot.mode, QueueMode::Parallel);
 
     assert_replays(&w);
 }

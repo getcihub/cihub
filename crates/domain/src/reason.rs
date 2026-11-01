@@ -102,10 +102,6 @@ closed_enum! {
         PrUpdatedAtMergeTime,
         /// Assembly created the test commit.
         TestBranchAssembled,
-        /// CIHub lost its access to the repository.
-        AccessLost,
-        /// CIHub has its access to the repository again.
-        AccessRestored,
         /// The mode of the queue changed with items in flight.
         ModeChanged,
         /// The queue is empty after a mode change.
@@ -186,8 +182,6 @@ impl Reason {
             Self::MergeRepeatedServerErrors => "the merge failed with server errors on every retry",
             Self::PrUpdatedAtMergeTime => "the PR changed between its tests and its merge",
             Self::TestBranchAssembled => "the test branch was built",
-            Self::AccessLost => "CIHub lost its access to the repository",
-            Self::AccessRestored => "CIHub has its access to the repository again",
             Self::ModeChanged => "the queue mode changed",
             Self::ModeSwitchCompleted => "the queue mode change is complete",
             Self::QueueDraining => "the queue is draining and accepts no new PR",

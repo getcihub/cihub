@@ -878,13 +878,14 @@ impl SimQueue {
         tx.commit().await.unwrap();
     }
 
-    async fn access(&self) -> (String, Vec<String>) {
+    /// Whether the queue lost its access, and the access facts of its log.
+    async fn access(&self) -> (bool, Vec<String>) {
         let mut tx = begin_system(&self.pool).await.unwrap();
-        let state: String = sqlx::query_scalar("SELECT state::text FROM queues WHERE id = $1")
-            .bind(queue().to_string())
-            .fetch_one(&mut *tx)
+        let is_access_lost = QueueLog::load(&mut tx, queue())
             .await
-            .unwrap();
+            .unwrap()
+            .snapshot
+            .is_access_lost;
         let facts = sqlx::query_scalar(
             "SELECT type::text FROM events
              WHERE queue_id = $1 AND type IN ('access.lost', 'access.restored') ORDER BY seq",
@@ -894,7 +895,7 @@ impl SimQueue {
         .await
         .unwrap();
 
-        (state, facts)
+        (is_access_lost, facts)
     }
 
     /// Wakes the queue, as a change would: after a move of the clock.
@@ -1276,12 +1277,12 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     sim.set_access("1", false);
     q.send().await;
     q.settle().await;
-    assert_eq!(q.access().await.0, "paused");
+    assert!(q.access().await.0);
     q.stop().await;
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool) {
+async fn a_lost_access_stops_the_queue_with_or_without_its_webhook(pool: PgPool) {
     let mut q = SimQueue::new(pool).await;
     let sim = q.sim.clone();
 
@@ -1294,16 +1295,13 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
     sim.set_access("1", false);
     q.send().await;
     q.settle().await;
-    assert_eq!(q.access().await, ("paused".into(), vec![lost()]));
+    assert_eq!(q.access().await, (true, vec![lost()]));
 
     sim.set_access("1", true);
     q.send().await;
     q.settle().await;
 
-    assert_eq!(
-        q.access().await,
-        ("running".into(), vec![lost(), restored()])
-    );
+    assert_eq!(q.access().await, (false, vec![lost(), restored()]));
 
     sim.set_access("1", false);
     sim.take_deliveries();
@@ -1317,7 +1315,7 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
     q.settle().await;
 
     let expected = vec![lost(), restored(), lost()];
-    assert_eq!(q.access().await, ("paused".into(), expected));
+    assert_eq!(q.access().await, (true, expected));
 
     sim.set_access("1", true);
     sim.take_deliveries();
@@ -1331,7 +1329,7 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
     q.settle().await;
 
     let expected = vec![lost(), restored(), lost(), restored()];
-    assert_eq!(q.access().await, ("running".into(), expected));
+    assert_eq!(q.access().await, (false, expected));
 
     sim.set_access("1", false);
     sim.take_deliveries();
@@ -1346,7 +1344,7 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
     q.settle().await;
 
     let expected = vec![lost(), restored(), lost(), restored(), lost()];
-    assert_eq!(q.access().await, ("paused".into(), expected));
+    assert_eq!(q.access().await, (true, expected));
     q.stop().await;
 }
 
@@ -5667,8 +5665,23 @@ async fn the_queue_is_updated_by_its_file_and_its_state_only(pool: PgPool) {
     assert_eq!(config_of(&pool).await.1, Some(pushed));
     assert_eq!(updated_at(&pool).await.0, read, "the file did not change");
 
-    sim.set_access("1", false);
-    q.send().await;
+    let pause = Event {
+        id: EventId::from_ulid(Ulid(700)),
+        org_id: org(),
+        queue_id: queue(),
+        actor: Actor::System,
+        occurred_at: q.clock.now(),
+        cause_id: None,
+        kind: EventKind::QueueControlRequested {
+            control: cihub_domain::QueueControl::Pause,
+        },
+    };
+    let mut tx = begin_system(&pool).await.unwrap();
+    cihub_store::deposit_fact(&mut tx, &pause, q.clock.now())
+        .await
+        .unwrap();
+    mark_dirty(&mut tx, queue()).await.unwrap();
+    tx.commit().await.unwrap();
     q.settle().await;
 
     let (paused, state_changed_at) = updated_at(&pool).await;

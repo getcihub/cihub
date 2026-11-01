@@ -365,7 +365,8 @@ export const getQueue = <ThrowOnError extends boolean = false>(options: Options<
  * Change the state of a queue
  *
  * Asks the queue for `running`, `paused` or `draining`; the queue changes
- * at its next reconciliation.
+ * at its next reconciliation. A queue that lost its access takes the state
+ * and stays stopped until the access comes back.
  *
  * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */

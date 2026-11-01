@@ -3267,7 +3267,7 @@
           "Queues"
         ],
         "summary": "Change the state of a queue",
-        "description": "Asks the queue for `running`, `paused` or `draining`; the queue changes\nat its next reconciliation.\n\n**Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
+        "description": "Asks the queue for `running`, `paused` or `draining`; the queue changes\nat its next reconciliation. A queue that lost its access takes the state\nand stays stopped until the access comes back.\n\n**Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
         "operationId": "update_queue",
         "parameters": [
           {
@@ -6327,7 +6327,7 @@
           },
           "is_suspended": {
             "type": "boolean",
-            "description": "CIHub no longer reaches the repository of the queue on the SCM: the\nApp is suspended or uninstalled, or no longer reaches the repository,\nand the queue is paused until the access comes back."
+            "description": "CIHub no longer reaches the repository of the queue on the SCM: the\nApp is suspended or uninstalled, or no longer reaches the repository.\nThe queue is stopped until the access comes back, and `state` keeps\nthe state that it takes again then."
           },
           "last_merged_at": {
             "type": [
@@ -6625,8 +6625,6 @@
           "merge_repeated_server_errors",
           "pr_updated_at_merge_time",
           "test_branch_assembled",
-          "access_lost",
-          "access_restored",
           "mode_changed",
           "mode_switch_completed",
           "queue_draining",

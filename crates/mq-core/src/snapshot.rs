@@ -100,8 +100,6 @@ pub enum Request {
         error: JobError,
     },
     Control(QueueControl),
-    AccessLost,
-    AccessRestored,
 }
 
 /// What a decision acts on, to keep its cause.
@@ -120,10 +118,9 @@ pub struct Snapshot {
     pub org_id: OrgId,
     pub queue_id: QueueId,
     pub target_branch: String,
+    /// A lost access leaves it as it is.
     pub state: QueueState,
-    /// The state before an `access_lost` paused the queue; `None` when an
-    /// admin paused it, so that `access_restored` leaves that pause alone.
-    pub state_before_access_lost: Option<QueueState>,
+    pub is_access_lost: bool,
     /// The mode in force.
     pub mode: QueueMode,
     /// The mode of the settings; it comes into force after `switching_modes`.
@@ -212,7 +209,7 @@ impl Snapshot {
             queue_id,
             target_branch,
             state: QueueState::Running,
-            state_before_access_lost: None,
+            is_access_lost: false,
             mode,
             requested_mode: mode,
             window: None,
@@ -227,6 +224,11 @@ impl Snapshot {
             requests: BTreeMap::new(),
             causes: BTreeMap::new(),
         }
+    }
+
+    /// The queue decides only the requests on itself, and merges nothing.
+    pub fn is_stopped(&self) -> bool {
+        self.state == QueueState::Paused || self.is_access_lost
     }
 
     /// Admitted items that are not concluded, in queue order.
