@@ -59,6 +59,19 @@ pub struct Dashboard {
     /// takes the address of the connection as the address of the client.
     pub trusted_proxy_hops: usize,
     pub news: QueueNewsFeed,
+    /// The Sentry server of the pages; `None` when they send no errors.
+    pub error_reports: Option<BrowserErrorReports>,
+}
+
+/// The Sentry server where the pages of the dashboard send their errors
+/// (`specs/OBSERVABILITY.md`). The pages read it in `index.html`: the DSN of
+/// a browser is public.
+#[derive(Clone, Debug)]
+pub struct BrowserErrorReports {
+    pub dsn: String,
+    pub environment: Option<String>,
+    /// The version of CIHub, the same as in the reports of the server.
+    pub release: &'static str,
 }
 
 #[derive(Clone)]
@@ -91,6 +104,7 @@ pub fn router(
         now,
         github: Arc::new(github),
     };
+    let index = dashboard::Index::new(dashboard.error_reports.as_ref());
     Router::new()
         .route(WEBHOOK_PATH, post(github_webhook))
         .layer(DefaultBodyLimit::max(MAX_DELIVERY_BYTES))
@@ -101,7 +115,7 @@ pub fn router(
         )
         .merge(sign_in_routes(&pool, now, &dashboard))
         .nest(API_PREFIX, api::router(pool, now, modules, dashboard))
-        .fallback(get(dashboard::serve))
+        .fallback(get(dashboard::serve).with_state(index))
 }
 
 fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashboard) -> Router {

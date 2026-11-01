@@ -4,12 +4,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { MotionProvider } from "@cihub/ui/components/motion";
+import { isRefusal } from "@/domain/problem";
 import { sendCsrfToken } from "@/domain/session/session";
+import { startErrorReports } from "@/lib/error-reports";
 import { createQueryClient } from "@/lib/query-client";
 import "@/styles/globals.css";
 import { routeTree } from "./routeTree.gen";
 
 sendCsrfToken();
+const rootOptions = await startErrorReports(isRefusal);
 
 const queryClient = createQueryClient();
 const router = createRouter({
@@ -29,7 +32,7 @@ declare module "@tanstack/react-router" {
 
 const root = document.getElementById("root");
 if (root) {
-  createRoot(root).render(
+  createRoot(root, rootOptions).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <MotionProvider>

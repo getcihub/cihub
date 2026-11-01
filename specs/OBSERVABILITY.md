@@ -1,7 +1,8 @@
 # Observability
 
 This spec gives the contract of the logs of CIHub: their format, their correlation keys, and the rules to write
-them. The settings are `log.filter` and `log.format` (`crates/server/src/config.rs` (`KEYS`)); the subscriber is in
+them; then the rules of the error reports, which an operator can send to a Sentry server. The settings are
+`log.*` and `sentry.*` (`crates/server/src/config.rs` (`KEYS`)); the subscriber is in
 `crates/telemetry/src/logs.rs` (`Logs`).
 
 ## Purpose
@@ -64,6 +65,27 @@ The lints check the rules marked _lint_ (clippy, and `scripts/lint-rules.sh`); t
   `tracing::enabled!(Level::DEBUG)`, or use a value that formats lazily.
 - **OBS-20** A test does not write to standard output. A test that checks a log installs
   `cihub_telemetry::CapturedLogs` (feature `capture`) and reads its `records`.
+
+## Error reports
+
+Code: `crates/telemetry/src/error_reports.rs`, `crates/web/src/dashboard.rs` (`Index`),
+`apps/console/src/lib/error-reports.ts`
+
+- **OBS-21** Error reports are off until the operator gives a DSN: `sentry.dsn` for the server and
+  `sentry.browser_dsn` for the dashboard. Without a DSN, nothing is sent and the dashboard does not load the SDK.
+  A DSN that does not parse stops the process at startup (DEP-6).
+- **OBS-22** The server sends an `ERROR` record that the log filter keeps, and a panic, as a Sentry event with the
+  keys of the open spans (`org_id`, `queue_id`...). The other levels are not sent.
+- **OBS-23** The dashboard sends what its scripts throw and what its React root catches, from its own origin only.
+  It drops the refusals of the API (4xx) and the errors that only the browser or an extension causes.
+- **OBS-24** A DSN is public, so it lives in the ConfigMap. The console is embedded in the binary, so `cihub-web`
+  writes the DSN, the environment and the release as `<meta>` elements into `index.html`, and the script reads
+  them before its first render.
+- **OBS-25** The release is `cihub@<version>` for the server and the dashboard; `sentry.environment` is optional
+  and common to both.
+- **OBS-26** The instance serves the source maps of the console next to its bundles, because the release CI cannot
+  upload them to the Sentry server of an operator. A Sentry server that cannot reach the instance gets minified
+  frames.
 
 ## Not built yet
 

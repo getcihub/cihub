@@ -38,4 +38,17 @@ data:
       "log" (dict "filter" .Values.log.filter "format" .Values.log.format)
       "github" $github
     }}
+    {{- $sentry := dict }}
+    {{- with .Values.sentry.dsn }}
+    {{- $_ := set $sentry "dsn" . }}
+    {{- end }}
+    {{- with .Values.sentry.browserDsn }}
+    {{- $_ := set $sentry "browser_dsn" . }}
+    {{- end }}
+    {{- with .Values.sentry.environment }}
+    {{- $_ := set $sentry "environment" . }}
+    {{- end }}
+    {{- with $sentry }}
+    {{- $_ := set $file "sentry" . }}
+    {{- end }}
     {{- toYaml $file | nindent 4 }}

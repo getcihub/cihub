@@ -33,6 +33,13 @@ export function isProblem(failure: Failure, code: ErrorCode): boolean {
   return problemOf(failure)?.code === code;
 }
 
+/** Whether what was thrown is a refusal of the API (4xx): the person reads it on the page and nobody has to act. */
+// eslint-disable-next-line no-restricted-syntax -- a thrown value has no type
+export function isRefusal(thrown: unknown): boolean {
+  const status = problemOf(failureOf(thrown))?.status;
+  return status !== undefined && status >= 400 && status < 500;
+}
+
 /** What the API answered to a refused action: its problem, else that it did not answer. */
 export function refusalOf(failure: Failure): string {
   const problem = problemOf(failure);
