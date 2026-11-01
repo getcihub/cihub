@@ -25,6 +25,13 @@ Markdown. A change keeps these URLs working; `mise run website:test` checks them
   itself.
 - `next.config.ts` redirects the paths that an agent guesses (`/install`, `/quickstart`) to the real page.
 
+## Analytics
+
+`src/instrumentation-client.ts` sends the visits of a browser to PostHog (EU), in cookieless mode: no cookie, no
+storage, no consent banner. Only the production deployment of Vercel sets `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`;
+without it, the site sends nothing. The events go through `/ingest`, which `next.config.ts` rewrites to PostHog.
+The project of PostHog must enable cookieless mode in its settings, or it drops these events.
+
 ## Writing a page
 
 - A page is an `.mdx` file of `content/docs/`, listed in `meta.json`, with a `title` and a `description`. Both go
