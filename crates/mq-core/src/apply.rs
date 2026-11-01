@@ -369,6 +369,16 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             item_id,
             merged_sha,
         } => {
+            // A merge of an item that is neither `tests_passed` nor the direct merge
+            // candidate was not planned on the current bases, so its push must
+            // clear them.
+            let is_own = snapshot
+                .items
+                .get(item_id)
+                .is_some_and(|item| item.state == ItemState::TestsPassed)
+                || snapshot
+                    .direct_merge_candidate()
+                    .is_some_and(|candidate| candidate.id == *item_id);
             let outcome = request(
                 snapshot,
                 event,
@@ -377,7 +387,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                     merged_sha: merged_sha.clone(),
                 },
             );
-            if outcome == Outcome::Applied {
+            if outcome == Outcome::Applied && is_own {
                 snapshot.target.own_shas.insert(merged_sha.clone());
             }
             outcome

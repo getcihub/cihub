@@ -497,6 +497,77 @@ fn urgent_goes_in_front_of_groups_in_test() {
 }
 
 #[test]
+fn urgent_does_not_skip_an_item_whose_merge_may_be_in_flight() {
+    let mut w = World::new(settings(window(1)));
+    w.submit(1, Priority::MEDIUM);
+    w.assemble_all();
+    w.report(1, CheckConclusion::Success);
+    let merges = w.reconcile().desired.merges;
+    let first = merges.iter().find(|m| m.pr_number == 1).unwrap().item_id;
+
+    w.submit(2, Priority::URGENT);
+
+    let order: Vec<u64> = w
+        .snapshot
+        .queue_order()
+        .iter()
+        .map(|i| i.pr_number)
+        .collect();
+    assert_eq!(order, vec![1, 2]);
+    assert_eq!(w.state(1), Some(ItemState::TestsPassed));
+
+    w.fact(
+        Actor::System,
+        EventKind::MergeSucceeded {
+            item_id: first,
+            merged_sha: "own".into(),
+        },
+    );
+    w.push_target_to(Actor::System, "own".into());
+
+    assert_eq!(w.ended().get(&1), Some(&ItemState::Merged));
+    assert!(decided_with(&w, Reason::MergeGraphMerge));
+
+    w.assemble_all();
+    w.report(2, CheckConclusion::Success);
+    let plan = w.reconcile();
+
+    let group = &w.snapshot.groups[&w.item(2).unwrap().group_id.unwrap()];
+    assert!(plan.desired.merges.iter().any(|m| m.pr_number == 2));
+    assert_eq!(group.predecessor_ids, [first]);
+    assert!(w.snapshot.target.valid_bases.contains(&group.base_sha));
+    assert_replays(&w);
+}
+
+#[test]
+fn a_merge_outside_the_tested_path_invalidates_the_bases() {
+    let mut w = World::new(settings(window(1)));
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    assert_eq!(w.state(2), Some(ItemState::Pending));
+    let second = w.item(2).unwrap().id;
+
+    w.fact(
+        Actor::System,
+        EventKind::MergeSucceeded {
+            item_id: second,
+            merged_sha: "outside".into(),
+        },
+    );
+
+    assert!(!w.snapshot.target.own_shas.contains("outside"));
+
+    w.push_target_to(Actor::System, "outside".into());
+
+    assert!(decided_with(&w, Reason::ManualMerge));
+    assert!(!decided_with(&w, Reason::MergeGraphDirectMerge));
+    assert_eq!(w.snapshot.target.valid_bases.len(), 1);
+    assert!(decided_with(&w, Reason::ManualPushToTargetBranch));
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    assert_replays(&w);
+}
+
+#[test]
 fn high_goes_behind_groups_in_test_and_before_medium() {
     let mut w = World::new(settings(window(1)));
     w.submit(1, Priority::MEDIUM);
