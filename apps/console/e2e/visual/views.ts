@@ -33,6 +33,7 @@ export interface View {
 
 export const WIDE: Viewport = { width: 1280, height: 800 };
 const NARROW: Viewport = { width: 700, height: 900 };
+const PHONE: Viewport = { width: 390, height: 844 };
 const SIGN_IN_NARROW: Viewport = { width: 850, height: 800 };
 const BOTH: Theme[] = ["light", "dark"];
 
@@ -151,7 +152,14 @@ export const VIEWS: View[] = [
     themes: BOTH,
     viewports: [WIDE, NARROW],
   },
-  { name: "queue-live", url: QUEUE_PAGE, ready: QUEUE_READY, themes: BOTH, viewports: [WIDE, NARROW] },
+  {
+    name: "queue-live",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    themes: BOTH,
+    // As narrow as a phone: the state and the actions wrap above the tabs.
+    viewports: [WIDE, NARROW, PHONE],
+  },
   { name: "queue-not-live", url: QUEUE_PAGE, ready: QUEUE_READY, isStreamClosed: true },
   { name: "queue-merged", url: `${QUEUE_PAGE}?tab=merged`, ready: "Add the audit log" },
   { name: "queue-ended", url: `${QUEUE_PAGE}?tab=ended`, ready: "Remove the old cache", themes: BOTH },
@@ -356,7 +364,7 @@ export const VIEWS: View[] = [
     ready: "Your pull requests",
     themes: BOTH,
     // Wider than the page, then as narrow as a phone.
-    viewports: [{ width: 1920, height: 800 }, WIDE, NARROW, { width: 390, height: 844 }],
+    viewports: [{ width: 1920, height: 800 }, WIDE, NARROW, PHONE],
     act: async (page) => {
       await page.getByRole("button", { name: /^Your account:/ }).click();
       await page.getByRole("button", { name: "Appearance" }).click();
@@ -394,7 +402,7 @@ export const VIEWS: View[] = [
     url: QUEUE_PAGE,
     ready: "skeleton",
     themes: BOTH,
-    viewports: [WIDE, NARROW],
+    viewports: [WIDE, NARROW, PHONE],
     hold: ({ path }) => path.endsWith("/graph"),
   },
   { name: "drawer-loading", url: DRAWER, ready: "skeleton", hold: ({ path }) => path.endsWith("/events") },

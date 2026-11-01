@@ -12,15 +12,18 @@ const PANE_LABELS: Record<Pane, { label: string; icon: ReactNode }> = {
   health: { label: "Health", icon: <PulseIcon /> },
 };
 
-/** The panes of a queue: the queue now, with its live items, and what it did over a period. */
-export function QueuePanes({ path, pane, live }: { path: QueuePath; pane: Pane; live: number }) {
+/**
+ * The panes of a queue: the queue now, with its live items, and what it did over a period. Without `live`, a page
+ * whose reads failed, the graph shows no count.
+ */
+export function QueuePanes({ path, pane, live }: { path: QueuePath; pane: Pane; live?: number }) {
   return (
-    <nav className="flex gap-5 border-b border-border" aria-label="Queue">
+    <nav className="flex [scrollbar-width:none] gap-5 overflow-x-auto" aria-label="Queue">
       {PANES.map((candidate) => (
         <Link
           key={candidate}
           className={cn(
-            "-mb-px inline-flex items-center gap-1.75 border-b-2 border-transparent px-0.5 pt-1.5 pb-2.25 font-medium whitespace-nowrap text-secondary-foreground hover:text-foreground [&>svg]:size-3.5 [&>svg]:flex-none",
+            "inline-flex items-center gap-1.75 border-b-2 border-transparent px-0.5 pt-1.5 pb-2.25 font-medium whitespace-nowrap text-secondary-foreground hover:text-foreground [&>svg]:size-3.5 [&>svg]:flex-none",
             candidate === pane && "border-primary text-foreground",
           )}
           to="/orgs/$org/repos/$repo/queues/$queue"
@@ -31,7 +34,7 @@ export function QueuePanes({ path, pane, live }: { path: QueuePath; pane: Pane; 
         >
           {PANE_LABELS[candidate].icon}
           {PANE_LABELS[candidate].label}
-          {candidate === "graph" && (
+          {candidate === "graph" && live !== undefined && (
             <span className="text-sm font-normal text-muted-foreground tabular-nums">{live}</span>
           )}
         </Link>

@@ -152,8 +152,9 @@ A block that grows past what the eye takes in at once moves to a hook of the pag
 
 ## Interface
 
-- The look comes from `@cihub/theme` (`tokens.css`, `tailwind.css`); `src/styles/globals.css` imports both, then
-  adds the utilities and base styles of the console only. A color, radius, shadow, font or size of the Tailwind
+- The look comes from `@cihub/theme` (`tokens.css`, the colors of the mockups v32 in two themes, and
+  `tailwind.css`); `src/styles/globals.css` imports both, then adds the utilities and base styles of the console
+  only. A color, radius, shadow, font or size of the Tailwind
   palette does not exist, so `bg-white` is a build without the class.
 - Colors by role, never by hue: `bg-card`, `text-muted-foreground`, and the `info`, `warning`, `destructive`,
   `success` tones with their `-muted` and `-border`. A component names a theme (`dark:`) only where no token can
