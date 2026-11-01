@@ -1,5 +1,87 @@
 # Changelog
 
+## [0.5.2](https://github.com/getcihub/cihub/compare/v0.5.1...v0.5.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **platform:** refuse a forged cursor as invalid_cursor ([#202](https://github.com/getcihub/cihub/issues/202)) ([6ad86d3](https://github.com/getcihub/cihub/commit/6ad86d373e5e8c2698de2fd8679164e49ea27896))
+
+## [0.5.1](https://github.com/getcihub/cihub/compare/v0.5.0...v0.5.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **web:** read the scheme of the authorization header without case (CIHUB-34) ([#201](https://github.com/getcihub/cihub/issues/201)) ([9a90297](https://github.com/getcihub/cihub/commit/9a90297d1d129a76dd5fb31a01e07d140862516c))
+
+## [0.5.0](https://github.com/getcihub/cihub/compare/v0.4.0...v0.5.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** `cihub app create` no longer exists; create the GitHub App by hand, on GitHub.
+* a database of version 0.4 or older does not upgrade; the command is cihub-server migrate up; Repo and RepoDetail give owner instead of namespace.
+
+### Features
+
+* **api:** set the type of a problem to the page of its error code ([f5ce26a](https://github.com/getcihub/cihub/commit/f5ce26a42b47bc7f50b818e7d523175afafc3998))
+* **client:** read the stream of an organization and follow a PR ([f451c49](https://github.com/getcihub/cihub/commit/f451c49561cef27eeedceca526ec5981f1c47c9e))
+* **cli:** remove cihub app create ([7677983](https://github.com/getcihub/cihub/commit/76779832790f978609ebb203950943edb01ef230))
+* **cli:** write tables in a terminal and rows in a pipe, add --json and cihub queue watch ([3dc94f8](https://github.com/getcihub/cihub/commit/3dc94f80d84e07b0cac3463335303e12d9449b19))
+* **helm:** refuse unknown values, spread the replicas and pin the test image ([5264c02](https://github.com/getcihub/cihub/commit/5264c0284bdce8adc02cc2a1f302964a886db502))
+* one migration per table with up and down, rename the namespace of a repository to owner ([8ed4822](https://github.com/getcihub/cihub/commit/8ed4822a2c03b36720776c8065c1b18b0518617c))
+* **platform:** copy the name, description and avatar of the account to the organization ([a1c6ede](https://github.com/getcihub/cihub/commit/a1c6edebc09eed421ff207b2f9d556268333ad36))
+* **telemetry:** name each log event &lt;object&gt;.&lt;action&gt; and correlate the lines of a job ([6a957da](https://github.com/getcihub/cihub/commit/6a957dad355be4993323abc122e2f3daf4256873))
+* **telemetry:** write flat JSON records and capture them in tests ([54affd5](https://github.com/getcihub/cihub/commit/54affd52b38fb0f38520610be8ea2c6c72a35304))
+* **web:** tag every log line of a request with request_id and org_id ([055969e](https://github.com/getcihub/cihub/commit/055969ec0f74c4bdafdd3193b63c48d379427982))
+
+
+### Bug Fixes
+
+* **cli:** send CIHUB_TOKEN only to the host of the command, write the sessions atomically ([2688b53](https://github.com/getcihub/cihub/commit/2688b531db73a6c05d86546e90e51f141acf87ac))
+* **github:** keep the guard clause of Rate::share ([a60cf38](https://github.com/getcihub/cihub/commit/a60cf388dd008bed043e95f05e7b5205dda1c1f6))
+* **github:** read a check conclusion that CIHub does not know as a failure ([9fc8e3e](https://github.com/getcihub/cihub/commit/9fc8e3e19cd7afb6d29d628c0b3e97f08c9271fd))
+* **mergequeue:** fail the job when a rendering does not serialize ([4a08825](https://github.com/getcihub/cihub/commit/4a08825031426421a57df64bb03b094bf56c236b))
+
+
+### Code Refactoring
+
+* **api:** describe each error example once, in the components ([7d1436b](https://github.com/getcihub/cihub/commit/7d1436bda769a7ac7f75b0d563ff5c08245cebd9))
+* **conditions:** split the modules, use thiserror, and read the config through them ([13c9ec0](https://github.com/getcihub/cihub/commit/13c9ec03a1072978705dfc95db97dc9d8e196480))
+* **console:** split the data layer by role, the queue page by zone, and share the error components ([037e69e](https://github.com/getcihub/cihub/commit/037e69e33778350574b313b80f4fcfb35dc5f1b5))
+* **domain:** one module per record, document every public item ([b15f8bf](https://github.com/getcihub/cihub/commit/b15f8bf19ba031cdec11ca114d602b66ca9baba0))
+* **mergequeue:** write the block reasons with BlockReason::describe ([a7c72b8](https://github.com/getcihub/cihub/commit/a7c72b821d59e16853c37eaf8788523d660f2d6d))
+* move the dashboard and the site into a pnpm workspace of apps and packages ([423a1fb](https://github.com/getcihub/cihub/commit/423a1fb970ea11a962ea281b1addf8b92b72ebb7))
+* move the OpenAPI document to schema/openapi/v1.json ([3deada4](https://github.com/getcihub/cihub/commit/3deada493f1b55dd32088386a0e0b14d689271a0))
+* **mq-core:** ask the snapshot and the item state instead of repeating their rules ([26ef7b0](https://github.com/getcihub/cihub/commit/26ef7b0e98066029b120a429cbd589359ff912b1))
+* **scm:** split the Scm trait in three, type its arguments and errors, split the simulator and the GitHub adapter ([1ef1f8a](https://github.com/getcihub/cihub/commit/1ef1f8a66a29e121c6aca3a613ababf721f6a127))
+* **store:** move the tables of the modules to cihub-platform and cihub-web ([3a445cc](https://github.com/getcihub/cihub/commit/3a445cc32f297bd4e798dc090eecf1be7c1321f2))
+* **ui:** split @cihub/ui into @cihub/theme, @cihub/icons, @cihub/utils and @cihub/ui ([b0f5c79](https://github.com/getcihub/cihub/commit/b0f5c79da42640f75a5e9ecc4e812996bc83087a))
+
+
+### Documentation
+
+* **docker:** describe the Docker infrastructure and the observability stack ([aadd8b5](https://github.com/getcihub/cihub/commit/aadd8b54be24856cfc5e1e24916d6f23737377e6))
+
+
+### Tests
+
+* **server:** kill the started server when a test panics ([42c2c87](https://github.com/getcihub/cihub/commit/42c2c8720a053784ae101db7252c5bbdd46f66a0))
+* **server:** read the status of the command line as the row of a pipe ([4ca3b2f](https://github.com/getcihub/cihub/commit/4ca3b2f9e619dabf55cdc0d9016b1b0f60d62855))
+
+
+### Continuous Integration
+
+* **release:** sign the image and the chart with cosign and pin the image digest ([cfbe544](https://github.com/getcihub/cihub/commit/cfbe544679a1998a6eb8acb1e62b553713af47fe))
+* **renovate:** update helm-unittest and regenerate the chart files on its PRs ([2010082](https://github.com/getcihub/cihub/commit/20100826e024329c25db70d9dea579b69fe85a9a))
+
+
+### Miscellaneous Chores
+
+* **compose:** create the role with postgres-init, add a tunnel profile, start COMPOSE_PROFILES ([1d3b0d6](https://github.com/getcihub/cihub/commit/1d3b0d6ee1ce53e5db03939c8ee5003f97c21c7b))
+* **lint:** refuse unknown in the TypeScript unless a comment says why ([a04ed23](https://github.com/getcihub/cihub/commit/a04ed23965ff7095195956d8f20f5f8e373de16a))
+* remove the comment-sicko, principles-reviewer and no-comments agent files ([8fa4120](https://github.com/getcihub/cihub/commit/8fa4120d78844210ea7e9ab51ab3e1da68154cec))
+
 ## [0.4.0](https://github.com/getcihub/cihub/compare/v0.3.1...v0.4.0) (2026-10-25)
 
 

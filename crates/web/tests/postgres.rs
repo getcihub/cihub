@@ -309,6 +309,80 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_scheme_of_the_authorization_header_is_case_insensitive(pool: PgPool) {
+    let addr = start(&pool).await;
+    let admin = token(&pool, 1, &[ApiScope::QueuesWrite]).await;
+
+    for authorization in [
+        format!("Bearer {admin}"),
+        format!("bearer {admin}"),
+        format!("BEARER {admin}"),
+        format!("Bearer   {admin}"),
+        format!("Bearer\t{admin}"),
+    ] {
+        let answer = call_with(
+            &addr,
+            "GET",
+            "/api/v1/orgs/acme/audit",
+            &[("Authorization", authorization.as_str())],
+        )
+        .await;
+
+        assert_eq!(answer.status, 200, "{authorization:?}: {}", answer.body);
+    }
+
+    let basic = call_with(
+        &addr,
+        "GET",
+        "/api/v1/orgs/acme/audit",
+        &[("Authorization", "Basic abc")],
+    )
+    .await;
+
+    assert_eq!(basic.status, 401);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_cursor_with_a_broken_time_is_refused_as_a_cursor(pool: PgPool) {
+    let addr = start(&pool).await;
+    let admin = token(&pool, 1, &[ApiScope::QueuesWrite]).await;
+    // base64url of {"list":"audit","after":["garbage","x"]}
+    let forged = "eyJsaXN0IjoiYXVkaXQiLCJhZnRlciI6WyJnYXJiYWdlIiwieCJdfQ";
+
+    let answer = call(
+        &addr,
+        "GET",
+        &format!("/api/v1/orgs/acme/audit?from={forged}"),
+        Some(&admin),
+    )
+    .await;
+
+    assert_eq!(answer.status, 400, "{}", answer.body);
+    let problem: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
+    assert_eq!(problem["code"], "invalid_cursor");
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_cursor_with_a_nul_character_is_refused_as_a_cursor(pool: PgPool) {
+    let addr = start(&pool).await;
+    let admin = token(&pool, 1, &[ApiScope::QueuesWrite]).await;
+    // base64url of {"list":"audit","after":["2026-01-01T00:00:00Z","a\u0000b"]}
+    let forged = "eyJsaXN0IjoiYXVkaXQiLCJhZnRlciI6WyIyMDI2LTAxLTAxVDAwOjAwOjAwWiIsImFcdTAwMDBiIl19";
+
+    let answer = call(
+        &addr,
+        "GET",
+        &format!("/api/v1/orgs/acme/audit?from={forged}"),
+        Some(&admin),
+    )
+    .await;
+
+    assert_eq!(answer.status, 400, "{}", answer.body);
+    let problem: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
+    assert_eq!(problem["code"], "invalid_cursor");
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_line_of_a_request_says_which_request_and_which_organization(pool: PgPool) {
     let logs = cihub_telemetry::CapturedLogs::default();
     let _logs = tracing::subscriber::set_default(logs.subscriber());

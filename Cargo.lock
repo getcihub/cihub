@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-analytics"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-domain",
  "cihub-store",
@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-api-types"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-domain",
  "serde",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-cli"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "cihub-api-types",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-client"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-api-types",
  "reqwest",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-conditions"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-domain",
  "globset",
@@ -278,7 +278,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-config"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-conditions",
  "cihub-domain",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-domain"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-github"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-mergequeue"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "axum",
  "cihub-analytics",
@@ -353,7 +353,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-mq-core"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-config",
  "cihub-domain",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-platform"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-scm"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
  "cihub-domain",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-server"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -434,7 +434,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-store"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "cihub-domain",
  "rand",
@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-telemetry"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "serde_json",
  "thiserror",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "cihub-web"
-version = "0.4.0"
+version = "0.5.2"
 dependencies = [
  "axum",
  "cihub-api-types",
