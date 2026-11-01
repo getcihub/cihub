@@ -13,7 +13,7 @@
 # pnpm before node: the corepack of node gives a pnpm of its own.
 "pnpm" = "12.11.2"
 "node" = "24.21.0"
-"rust" = { version = "1.99.0", profile = "minimal", components = "clippy,rustfmt,llvm-tools" }
+"rust" = { version = "1.99.1", profile = "minimal", components = "clippy,rustfmt,llvm-tools" }
 "shellcheck" = "0.11.0"
 "zizmor" = "1.30.1"
 
