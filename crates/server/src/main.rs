@@ -93,10 +93,11 @@ async fn main() -> anyhow::Result<()> {
         trusted_proxy_hops,
         database,
         logs,
+        browser_error_reports,
         github,
     } = Config::load(cli.config.as_deref())?;
 
-    logs.init()?;
+    let _error_reports = logs.init()?;
     let pool = cihub_store::connect(&database.url, database.pool).await?;
     cihub_store::check_role(&pool).await?;
     match cli.command {
@@ -110,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
                 http_addr,
                 public_url,
                 trusted_proxy_hops,
+                browser_error_reports,
                 pool,
                 github,
             )

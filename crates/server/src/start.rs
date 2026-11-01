@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use anyhow::{Context, anyhow};
 use cihub_platform::request_installations_sync_at_start;
 use cihub_store::{PgPool, begin_system};
+use cihub_web::BrowserErrorReports;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
@@ -44,6 +45,7 @@ pub(super) struct Shared {
     pub http_addr: SocketAddr,
     pub public_url: Option<String>,
     pub trusted_proxy_hops: usize,
+    pub browser_error_reports: Option<BrowserErrorReports>,
     pub github: Github,
     pub cancel: CancellationToken,
 }
@@ -53,6 +55,7 @@ pub(super) async fn run(
     http_addr: SocketAddr,
     public_url: Option<String>,
     trusted_proxy_hops: usize,
+    browser_error_reports: Option<BrowserErrorReports>,
     pool: PgPool,
     github: Github,
 ) -> anyhow::Result<()> {
@@ -77,6 +80,7 @@ pub(super) async fn run(
         http_addr,
         public_url,
         trusted_proxy_hops,
+        browser_error_reports,
         github,
         cancel: cancel.clone(),
     };

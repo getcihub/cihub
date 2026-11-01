@@ -37,6 +37,7 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no
 ring = { version = "0.17.14", default-features = false, features = ["std"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 secrecy = { version = "0.10.3", default-features = false }
+sentry = { version = "0.49.5", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls-no-provider", "tracing"] }
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = { version = "0.11.0", default-features = false }
 serde-saphyr = { version = "1.3.0", default-features = false, features = ["deserialize"] }

@@ -108,6 +108,32 @@ These rules apply to all the code, written by a human or by an agent. The lints 
     `cihub_telemetry::CapturedLogs` (feature `capture`, in the dev-dependencies) (`tracing::subscriber::with_default`, or `set_default` in an async
     test), which keeps the lines of the `json` format in memory, then reads its `records`.
 
+## Error reports
+
+An instance can send its errors to a Sentry server: sentry.io, or a Sentry server that its operator hosts. The
+DSN names the server, so the two cases need the same settings. Without a DSN, nothing leaves the instance; the
+server and the dashboard turn on independently.
+
+| Key                  | Variable                   | Default | Role                                                                                       |
+| -------------------- | -------------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `sentry.dsn`         | `CIHUB_SENTRY_DSN`         | none    | DSN where the server sends its errors                                                      |
+| `sentry.browser_dsn` | `CIHUB_SENTRY_BROWSER_DSN` | none    | DSN where the pages of the dashboard send their errors; often another project of the server |
+| `sentry.environment` | `CIHUB_SENTRY_ENVIRONMENT` | none    | Environment of the reports of both, such as `production`                                  |
+
+An invalid DSN stops the process at startup. A DSN only lets its holder send events, never read them, so it is
+not a secret: the dashboard reads its own in `index.html`.
+
+- **Server.** `cihub-telemetry` adds two layers to the subscriber of the logs. A record at `ERROR` that the
+  `log.filter` keeps becomes a Sentry event, with the fields of the record and the correlation keys of its open
+  spans; a panic becomes an event too. The spans make Sentry transactions only to carry these keys: the
+  client has no sample rate, so it sends no transaction. The rules of the logs therefore hold for the reports:
+  a constant message groups the events, and no secret is in a field.
+- **Dashboard.** The server writes the DSN, the environment and the version into `index.html`, as
+  `<meta name="sentry-…">`. With a DSN, the page loads the SDK before its first render and reports the errors
+  of the browser and of the React components; without it, the page never loads the SDK.
+- **Version.** Both send the release `cihub@<version>`, so that a Sentry server groups the errors of a version.
+  The source maps of the dashboard are not published yet: a report of the browser shows the minified code.
+
 ## Alerts and dashboards
 
 Alerts that wake someone up: more than 1 % of reconciliation errors for 5 min; webhook inbox lag beyond 60 s; a queue where a run exceeds `deadline_at` by more than 10 min and stays in progress (stuck timeout); outbox lag beyond 10 min; GitHub rate limit budget under 10 % for an installation with live items; job dead-letter queue not empty. Alerts as simple notification: ClickHouse insert failures, customer webhook endpoints disabled automatically, App installation suspended.

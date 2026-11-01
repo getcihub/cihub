@@ -1,6 +1,6 @@
 [package]
 name = "cihub-telemetry"
-description = "CIHub telemetry: logs, then traces and metrics"
+description = "CIHub telemetry: logs and error reports, then traces and metrics"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,8 @@ publish.workspace = true
 capture = []
 
 [dependencies]
+rustls.workspace = true
+sentry.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 time = { workspace = true, features = ["macros"] }

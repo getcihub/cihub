@@ -2,11 +2,17 @@
 //! the dashboard that is not a file, such as `/sign-in` or `/orgs/acme`, gets
 //! `index.html`: the router of the page reads the path.
 
+use std::fmt::Write;
+
+use axum::body::Bytes;
+use axum::extract::State;
 use axum::http::header::{
     CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS,
 };
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
+
+use crate::BrowserErrorReports;
 
 include!(concat!(env!("OUT_DIR"), "/dashboard.rs"));
 
@@ -15,17 +21,62 @@ include!(concat!(env!("OUT_DIR"), "/dashboard.rs"));
 const NOT_PAGES: [&str; 4] = ["/api/", "/auth/", "/webhooks/", "/assets/"];
 const INDEX: &str = "/index.html";
 
-pub(crate) async fn serve(uri: Uri) -> Response {
+/// `index.html`, with the settings of the error reports when the instance
+/// has them; `None` without a build of the dashboard.
+#[derive(Clone)]
+pub(crate) struct Index(Option<Bytes>);
+
+impl Index {
+    pub(crate) fn new(error_reports: Option<&BrowserErrorReports>) -> Self {
+        let index = file(INDEX).map(|body| match error_reports {
+            None => Bytes::from_static(body),
+            Some(error_reports) => Bytes::from(with_settings(body, error_reports)),
+        });
+        Self(index)
+    }
+}
+
+pub(crate) async fn serve(State(index): State<Index>, uri: Uri) -> Response {
     let path = uri.path();
-    if let Some(body) = file(path) {
-        return answer(path, body);
+    if let Some(body) = file(path).filter(|_| path != INDEX) {
+        return answer(path, Bytes::from_static(body));
     }
 
     let is_page = !NOT_PAGES.iter().any(|prefix| path.starts_with(prefix));
-    match file(INDEX) {
+    match index.0 {
         Some(body) if is_page => answer(INDEX, body),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// The settings as `<meta>` elements at the end of `<head>`, where the
+/// scripts of the dashboard read them before they start.
+fn with_settings(index: &[u8], error_reports: &BrowserErrorReports) -> String {
+    let settings = [
+        ("sentry-dsn", Some(error_reports.dsn.as_str())),
+        ("sentry-environment", error_reports.environment.as_deref()),
+        ("sentry-release", Some(error_reports.release)),
+    ];
+    let mut meta = String::new();
+    for (name, value) in settings
+        .iter()
+        .filter_map(|(name, value)| Some((name, (*value)?)))
+    {
+        let _ = write!(
+            meta,
+            r#"<meta name="{name}" content="{}" />"#,
+            escape(value)
+        );
+    }
+    String::from_utf8_lossy(index).replacen("</head>", &format!("{meta}</head>"), 1)
+}
+
+fn escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn file(path: &str) -> Option<&'static [u8]> {
@@ -38,7 +89,7 @@ fn file(path: &str) -> Option<&'static [u8]> {
 /// Vite names each asset under `/assets/` by its content, so an asset never
 /// changes; any other file is read again at each visit, so that a deploy
 /// shows at once. No other site may frame a page, as its buttons act.
-fn answer(path: &str, body: &'static [u8]) -> Response {
+fn answer(path: &str, body: Bytes) -> Response {
     let cache = if path.starts_with("/assets/") {
         "public, max-age=31536000, immutable"
     } else {
@@ -73,7 +124,9 @@ mod tests {
     use super::*;
 
     async fn status_of(path: &str) -> StatusCode {
-        serve(path.parse().unwrap()).await.status()
+        serve(State(Index::new(None)), path.parse().unwrap())
+            .await
+            .status()
     }
 
     #[tokio::test]
@@ -95,6 +148,26 @@ mod tests {
         ] {
             assert_eq!(status_of(path).await, StatusCode::NOT_FOUND, "{path}");
         }
+    }
+
+    #[test]
+    fn the_index_carries_the_settings_of_the_error_reports() {
+        let index = b"<html><head><title>CIHub</title></head><body></body></html>";
+        let error_reports = BrowserErrorReports {
+            dsn: "https://key@sentry.example.com/2?a=1&b=\"".to_owned(),
+            environment: None,
+            release: "cihub@1.2.3",
+        };
+
+        let page = with_settings(index, &error_reports);
+
+        assert_eq!(
+            page,
+            "<html><head><title>CIHub</title>\
+             <meta name=\"sentry-dsn\" content=\"https://key@sentry.example.com/2?a=1&amp;b=&quot;\" />\
+             <meta name=\"sentry-release\" content=\"cihub@1.2.3\" />\
+             </head><body></body></html>"
+        );
     }
 
     #[test]

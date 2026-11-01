@@ -11,11 +11,12 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use cihub_github::{GithubConfig, SignInClient};
 use cihub_store::{MIN_DATABASE_SECRET_BYTES, PoolSettings};
-use cihub_telemetry::{LogFormat, Logs};
+use cihub_telemetry::{ErrorReports, LogFormat, Logs, RELEASE, check_dsn};
+use cihub_web::BrowserErrorReports;
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-const KEYS: [&str; 18] = [
+const KEYS: [&str; 21] = [
     "database.url",
     "database.pool_size",
     "database.idle_timeout",
@@ -27,6 +28,9 @@ const KEYS: [&str; 18] = [
     "internal.addr",
     "log.filter",
     "log.format",
+    "sentry.dsn",
+    "sentry.browser_dsn",
+    "sentry.environment",
     "github.url",
     "github.app_id",
     "github.private_key",
@@ -47,6 +51,8 @@ pub struct Config {
     pub trusted_proxy_hops: usize,
     pub database: Database,
     pub logs: Logs,
+    /// The Sentry server of the dashboard; `None` when it sends no errors.
+    pub browser_error_reports: Option<BrowserErrorReports>,
     pub github: Option<GithubApp>,
 }
 
@@ -119,6 +125,7 @@ impl Config {
                 format!("{} `{}` is not a valid filter", filter.origin, filter.value)
             })?,
         };
+        let (logs, browser_error_reports) = error_reports(&sources, logs)?;
 
         let github = github_app(&sources)?;
         let has_sign_in = github
@@ -138,9 +145,42 @@ impl Config {
             trusted_proxy_hops,
             database,
             logs,
+            browser_error_reports,
             github,
         })
     }
+}
+
+/// The Sentry servers of the process and of the dashboard: each one is off
+/// without its DSN.
+fn error_reports(
+    sources: &Sources<impl Fn(&str) -> Option<String>>,
+    logs: Logs,
+) -> anyhow::Result<(Logs, Option<BrowserErrorReports>)> {
+    let environment = sources
+        .non_empty("sentry.environment")
+        .map(|found| found.value);
+    let invalid = |dsn: &Found| format!("{} is not a valid DSN", dsn.origin);
+
+    let logs = match sources.non_empty("sentry.dsn") {
+        None => logs,
+        Some(dsn) => logs.with_error_reports(
+            ErrorReports::new(&dsn.value, environment.clone()).with_context(|| invalid(&dsn))?,
+        ),
+    };
+    let browser = match sources.non_empty("sentry.browser_dsn") {
+        None => None,
+        Some(dsn) => {
+            check_dsn(&dsn.value).with_context(|| invalid(&dsn))?;
+            Some(BrowserErrorReports {
+                dsn: dsn.value,
+                environment,
+                release: RELEASE,
+            })
+        }
+    };
+
+    Ok((logs, browser))
 }
 
 fn database(sources: &Sources<impl Fn(&str) -> Option<String>>) -> anyhow::Result<Database> {
@@ -398,6 +438,9 @@ mod tests {
                 "CIHUB_INTERNAL_ADDR",
                 "CIHUB_LOG_FILTER",
                 "CIHUB_LOG_FORMAT",
+                "CIHUB_SENTRY_DSN",
+                "CIHUB_SENTRY_BROWSER_DSN",
+                "CIHUB_SENTRY_ENVIRONMENT",
                 "CIHUB_GITHUB_URL",
                 "CIHUB_GITHUB_APP_ID",
                 "CIHUB_GITHUB_PRIVATE_KEY",
@@ -424,6 +467,7 @@ mod tests {
             }
         );
         assert!(config.database.secret.is_none());
+        assert!(config.browser_error_reports.is_none());
         assert!(config.github.is_none());
     }
 
@@ -652,6 +696,38 @@ github:
             let err = url(wrong).unwrap_err().to_string();
             assert!(err.contains("must be the root address"), "{wrong}: {err}");
         }
+    }
+
+    #[test]
+    fn the_error_reports_need_a_valid_dsn() {
+        let file = "
+sentry:
+  dsn: https://server@sentry.example.com/1
+  browser_dsn: https://browser@sentry.example.com/2
+  environment: staging
+";
+        let config = load(Some(file), &[DATABASE]).unwrap();
+        let wrong = load(
+            None,
+            &[DATABASE, ("CIHUB_SENTRY_DSN", "sentry.example.com")],
+        );
+        let wrong_browser = load(
+            Some("sentry:\n  browser_dsn: https://sentry.example.com/2\n"),
+            &[DATABASE],
+        );
+
+        let browser = config.browser_error_reports.unwrap();
+        assert_eq!(browser.dsn, "https://browser@sentry.example.com/2");
+        assert_eq!(browser.environment.as_deref(), Some("staging"));
+        assert_eq!(browser.release, RELEASE);
+        assert_eq!(
+            wrong.unwrap_err().to_string(),
+            "CIHUB_SENTRY_DSN is not a valid DSN"
+        );
+        assert_eq!(
+            wrong_browser.unwrap_err().to_string(),
+            "`sentry.browser_dsn` in /etc/cihub/server.yaml is not a valid DSN"
+        );
     }
 
     #[test]

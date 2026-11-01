@@ -16,6 +16,7 @@
     "@cihub/theme": "workspace:*",
     "@cihub/ui": "workspace:*",
     "@cihub/utils": "workspace:*",
+    "@sentry/react": "11.10.0",
     "@tanstack/react-form": "1.33.5",
     "@tanstack/react-query": "5.104.2",
     "@tanstack/react-router": "1.170.42",

@@ -78,6 +78,7 @@ async fn serve_with(
         news: QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
             .unwrap(),
+        error_reports: None,
     };
     let router = cihub_web::router(pool.clone(), now, github, Vec::new(), dashboard);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

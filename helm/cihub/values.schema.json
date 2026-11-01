@@ -598,6 +598,33 @@
       "title": "securityContext",
       "type": "object"
     },
+    "sentry": {
+      "additionalProperties": false,
+      "description": "The Sentry server of the error reports, sentry.io or a server of your own; each DSN is\npublic, so it stays in the ConfigMap (specs/OBSERVABILITY.md).",
+      "properties": {
+        "browserDsn": {
+          "default": "",
+          "description": "DSN where the pages of the dashboard send their errors; none when empty.",
+          "title": "browserDsn",
+          "type": "string"
+        },
+        "dsn": {
+          "default": "",
+          "description": "DSN where the server sends its `ERROR` logs and its panics; none when empty.",
+          "title": "dsn",
+          "type": "string"
+        },
+        "environment": {
+          "default": "",
+          "description": "Environment of the reports, such as `production`.",
+          "title": "environment",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "sentry",
+      "type": "object"
+    },
     "service": {
       "additionalProperties": false,
       "properties": {

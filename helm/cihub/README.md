@@ -95,6 +95,9 @@ Kubernetes: `>=1.25.0-0`
 | replicas | int | `1` | Replicas of `cihub-server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost. |
 | resources | object | `{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resources of the server pods and of the migration Job. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Security context of the containers: CIHub writes no file. |
+| sentry.browserDsn | string | `""` | DSN where the pages of the dashboard send their errors; none when empty. |
+| sentry.dsn | string | `""` | DSN where the server sends its `ERROR` logs and its panics; none when empty. |
+| sentry.environment | string | `""` | Environment of the reports, such as `production`. |
 | service.port | int | `8080` | Port of the Service, to the public address of the pods: the webhooks on `POST /webhooks/github` and the API. The internal address (`/healthz`, `/readyz`) stays on the pods, for the probes. |
 | service.type | string | `"ClusterIP"` | Type of the Service. |
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"internal"},"periodSeconds":2}` | Startup probe; the other probes wait until it passes. It allows a minute. |

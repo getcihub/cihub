@@ -326,6 +326,7 @@ pub(crate) fn router(
         public_url,
         trusted_proxy_hops,
         news,
+        error_reports: _,
     } = dashboard;
     let parts: Vec<_> = modules
         .iter()

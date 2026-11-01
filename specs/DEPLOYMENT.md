@@ -99,6 +99,9 @@ startup, with a message that names the key and the file, or the variable.
 | `http.trusted_proxy_hops` | `CIHUB_HTTP_TRUSTED_PROXY_HOPS` | `0`                  | Number of proxies in front of the server that append to `X-Forwarded-For`; with `N` above 0, the client address of a route without a token is the `N`-th address from the right of the header, and the address of the connection when the header has fewer than `N` addresses or the address does not parse; 0 uses the address of the connection (`specs/SECURITY.md`) |
 | `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
 | `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
+| `sentry.dsn`              | `CIHUB_SENTRY_DSN`              | none                 | DSN of the Sentry server of the errors of the server; none sends nothing (`specs/OBSERVABILITY.md`) |
+| `sentry.browser_dsn`      | `CIHUB_SENTRY_BROWSER_DSN`      | none                 | DSN of the Sentry server of the errors of the dashboard; none sends nothing  |
+| `sentry.environment`      | `CIHUB_SENTRY_ENVIRONMENT`      | none                 | Environment of the error reports, such as `production`                       |
 | `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |
 | `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub-server migrate` does not need it |
 | `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
@@ -190,7 +193,8 @@ The secrets come from existing Secrets: `database.existingSecret` gives `CIHUB_D
 (`<cluster>-app` of CloudNativePG), and `github.existingSecret`
 gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and, when `github.clientId` is
 set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, `trustedProxyHops` gives `http.trusted_proxy_hops` (set it to the number of proxies of the Ingress path, else every client behind them shares one limit), and `database.poolSize`,
-`database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
+`database.idleTimeout` and `database.connectionTimeout` give the settings of the pool, and `sentry.dsn`,
+`sentry.browserDsn` and `sentry.environment` give the keys of `sentry`, in the ConfigMap, as a DSN is not a secret. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
 CIHub does not call the Kubernetes API. `helm/cihub/README.md`, generated, lists the values; `values.schema.json`
 refuses a key that the chart does not know, so that a typo fails the install instead of being ignored.

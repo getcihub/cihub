@@ -1029,6 +1029,7 @@ async fn serve_api_with(
         news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
             .unwrap(),
+        error_reports: None,
     };
     let router = cihub_web::router(pool.clone(), web_clock, webhooks, vec![api], dashboard);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
