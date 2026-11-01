@@ -194,7 +194,7 @@ hook of the page (`use-*.ts`) or to a function of `domain/`. A loader follows it
 
 ## Interface
 
-- The look comes from `@cihub/theme`: its `tokens.css` holds the tokens of the mockups v5 in two themes
+- The look comes from `@cihub/theme`: its `tokens.css` holds the colors of the mockups v32 in two themes
   (`data-theme`), and its `tailwind.css` the Tailwind theme that makes them utilities. `src/styles/globals.css`
   imports both, then adds the utilities and the base styles of the console only. The theme holds these tokens only: a color, a radius, a shadow, a
   font or a size of the Tailwind palette does not exist, so `bg-white` or `text-gray-500` is a build without the
