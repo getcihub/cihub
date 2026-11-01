@@ -13,7 +13,8 @@ use crate::client::encode;
 use crate::graphql::{Nodes, decode};
 use crate::translate::{check_conclusion, check_run_status, status_report};
 
-/// The GraphQL fragment that reads the checks and the statuses of a commit.
+/// The GraphQL fragment that reads the checks and the statuses of a commit. It
+/// reads [`MAX_CHECKS_PER_READ`](cihub_scm::MAX_CHECKS_PER_READ) contexts at most and does not page.
 pub(crate) const CHECKS_FRAGMENT: &str = "
 fragment checks on StatusCheckRollup {
   contexts(first: 100) {
@@ -227,5 +228,12 @@ mod tests {
                 (None, Some(datetime!(2026-10-11 12:10 UTC))),
             ]
         );
+    }
+
+    #[test]
+    fn the_fragment_reads_the_number_of_checks_that_the_contract_says() {
+        let first = format!("contexts(first: {})", cihub_scm::MAX_CHECKS_PER_READ);
+
+        assert!(CHECKS_FRAGMENT.contains(&first), "{CHECKS_FRAGMENT}");
     }
 }

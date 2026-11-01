@@ -4739,6 +4739,103 @@
       }
     },
     {
+      "method": "POST",
+      "path": "/graphql",
+      "request": {
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 53) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl startedAt completedAt }\n      ... on StatusContext { context state targetUrl createdAt }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number url state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "variables": {
+          "name": "testing",
+          "owner": "getcihub"
+        }
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4964",
+        "x-ratelimit-reset": "1792617202",
+        "x-ratelimit-resource": "graphql",
+        "x-ratelimit-used": "36"
+      },
+      "body": {
+        "data": {
+          "repository": {
+            "p0": {
+              "additions": 1,
+              "author": {
+                "databaseId": 339795890,
+                "login": "cihub-dev"
+              },
+              "baseRefName": "main",
+              "body": "contract",
+              "changedFiles": 1,
+              "createdAt": "2026-10-21T20:36:28Z",
+              "deletions": 0,
+              "headRefName": "cihub-temp/contract",
+              "headRefOid": "28c370c645a2735d4ae12145a5afd95562f7b59e",
+              "isCrossRepository": false,
+              "isDraft": true,
+              "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
+                "nodes": []
+              },
+              "mergeCommit": null,
+              "mergeStateStatus": "BLOCKED",
+              "mergeable": "MERGEABLE",
+              "number": 53,
+              "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
+              "state": "CLOSED",
+              "statusCheckRollup": {
+                "contexts": {
+                  "nodes": [
+                    {
+                      "__typename": "CheckRun",
+                      "completedAt": null,
+                      "conclusion": null,
+                      "detailsUrl": "https://github.com/getcihub/testing/actions/runs/39671772753/job/119471211004",
+                      "name": "ci",
+                      "startedAt": "2026-10-21T20:36:32Z",
+                      "status": "QUEUED"
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "completedAt": "2026-10-21T20:35:24Z",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/getcihub/testing/actions/runs/39671587258/job/119470569218",
+                      "name": "ci",
+                      "startedAt": "2026-10-21T20:35:17Z",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract",
+                      "createdAt": "2026-10-21T20:36:17Z",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract-ci",
+                      "createdAt": "2026-10-21T20:35:12Z",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    }
+                  ]
+                }
+              },
+              "title": "contract draft",
+              "url": "https://github.com/getcihub/testing/pull/53"
+            }
+          }
+        }
+      }
+    },
+    {
       "method": "DELETE",
       "path": "/repos/getcihub/testing/git/refs/heads/cihub-temp/contract",
       "status": 204,

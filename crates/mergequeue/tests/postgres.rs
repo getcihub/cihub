@@ -6748,6 +6748,9 @@ impl Chaos {
             seed: self.seed,
             unavailable_percent: 1,
             rate_limited_percent: 1,
+            // On, it fails the oracle: a merge whose answer is lost is recorded as `manual_merge` (CIHUB-7).
+            // Turn it on with that fix.
+            lost_answer_percent: 0,
             rate_limited_until: self.clock.now() + Duration::minutes(1),
         }));
 

@@ -84,7 +84,31 @@ pub enum ScmMethod {
     PersonRole,
 }
 
-/// Makes the next calls fail with `error`.
+impl ScmMethod {
+    /// Whether the method changes the SCM, so that its effect can land and
+    /// its answer be lost.
+    fn changes_state(self) -> bool {
+        matches!(
+            self,
+            Self::SetBranch
+                | Self::DeleteBranch
+                | Self::MergeIntoBranch
+                | Self::MergePr
+                | Self::SetStatus
+                | Self::CreateComment
+                | Self::UpdateComment
+                | Self::AcknowledgeComment
+                | Self::AddLabel
+                | Self::RemoveLabel
+                | Self::OpenDraftPr
+                | Self::ClosePr
+                | Self::RefreshPersonToken
+        )
+    }
+}
+
+/// Makes the next calls fail with `error`, before they have any effect; to
+/// fail them after, see [`Sim::lose_answer`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fault {
     /// The method to fail, or `None` for every method.
@@ -138,19 +162,51 @@ pub struct RandomFaults {
     pub unavailable_percent: u8,
     /// The share of calls that fail with a spent rate limit, in percent.
     pub rate_limited_percent: u8,
+    /// The share of calls that change the SCM and then fail with a server
+    /// error, so that their effect lands and their answer is lost, in
+    /// percent.
+    pub lost_answer_percent: u8,
     /// The end of the rate limit that such a failure reports.
     pub rate_limited_until: OffsetDateTime,
 }
 
+/// How a call fails: with `error`, before its effect or after it.
+#[derive(Clone, Debug)]
+pub(super) struct Failure {
+    pub(super) error: ScmError,
+    pub(super) is_answer_lost: bool,
+}
+
+/// A fault that waits for its calls.
+#[derive(Clone, Debug)]
+pub(super) struct QueuedFault {
+    fault: Fault,
+    is_answer_lost: bool,
+}
+
 impl RandomFaults {
-    fn draw(&mut self) -> Option<ScmError> {
+    fn draw(&mut self, method: ScmMethod) -> Option<Failure> {
         let roll = splitmix(&mut self.seed) % 100;
         let unavailable = u64::from(self.unavailable_percent);
+        let rate_limited = unavailable + u64::from(self.rate_limited_percent);
         if roll < unavailable {
-            Some(ScmError::Unavailable("random server error".into()))
-        } else if roll < unavailable + u64::from(self.rate_limited_percent) {
-            Some(ScmError::RateLimited {
-                until: self.rate_limited_until,
+            Some(Failure {
+                error: ScmError::Unavailable("random server error".into()),
+                is_answer_lost: false,
+            })
+        } else if roll < rate_limited {
+            Some(Failure {
+                error: ScmError::RateLimited {
+                    until: self.rate_limited_until,
+                },
+                is_answer_lost: false,
+            })
+        } else if roll < rate_limited + u64::from(self.lost_answer_percent)
+            && method.changes_state()
+        {
+            Some(Failure {
+                error: ScmError::Unavailable("random lost answer".into()),
+                is_answer_lost: true,
             })
         } else {
             None
@@ -170,7 +226,24 @@ fn splitmix(seed: &mut u64) -> u64 {
 impl Sim {
     /// Makes the next calls fail, after the faults already waiting.
     pub fn fail(&self, fault: Fault) {
-        self.with(|state| state.faults.push_back(fault));
+        self.with(|state| {
+            state.faults.push_back(QueuedFault {
+                fault,
+                is_answer_lost: false,
+            });
+        });
+    }
+
+    /// Makes the next calls change the SCM and then fail, as a call whose
+    /// answer is lost on the network: the effect lands, the caller reads
+    /// `fault.error`. It queues with the faults of [`Sim::fail`].
+    pub fn lose_answer(&self, fault: Fault) {
+        self.with(|state| {
+            state.faults.push_back(QueuedFault {
+                fault,
+                is_answer_lost: true,
+            });
+        });
     }
 
     /// Makes calls fail at random as `faults` says, or stops it with `None`.
@@ -185,23 +258,26 @@ impl Sim {
 }
 
 impl State {
-    pub(super) fn take_fault(&mut self, method: ScmMethod) -> Option<ScmError> {
+    pub(super) fn take_fault(&mut self, method: ScmMethod) -> Option<Failure> {
         let Some(index) = self
             .faults
             .iter()
-            .position(|fault| fault.call.is_none_or(|call| call == method))
+            .position(|queued| queued.fault.call.is_none_or(|call| call == method))
         else {
-            return self.random.as_mut().and_then(RandomFaults::draw);
+            return self.random.as_mut().and_then(|random| random.draw(method));
         };
 
-        let fault = &mut self.faults[index];
-        let error = fault.error.clone();
+        let queued = &mut self.faults[index];
+        let failure = Failure {
+            error: queued.fault.error.clone(),
+            is_answer_lost: queued.is_answer_lost,
+        };
 
-        fault.times = fault.times.saturating_sub(1);
-        if fault.times == 0 {
+        queued.fault.times = queued.fault.times.saturating_sub(1);
+        if queued.fault.times == 0 {
             self.faults.remove(index);
         }
 
-        Some(error)
+        Some(failure)
     }
 }

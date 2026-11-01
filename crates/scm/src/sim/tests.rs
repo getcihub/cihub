@@ -12,9 +12,9 @@ use super::{
     contract_world,
 };
 use crate::{
-    AppCalls, ConnectionRef, PersonCalls, PrMerge, RecentDelivery, RepoCalls, RepoRef,
-    RequiredChecks, ScmError, ScmEvent, ScmMembership, ScmPersonRepo, ScmProfile, ScmUser,
-    SetupFinding, SignInCode, SignInRequest, code_challenge,
+    AppCalls, BranchMove, ConnectionRef, MAX_CHECKS_PER_READ, PersonCalls, PrMerge, RecentDelivery,
+    RepoCalls, RepoRef, RequiredChecks, ScmError, ScmEvent, ScmMembership, ScmPersonRepo,
+    ScmProfile, ScmUser, SetupFinding, SignInCode, SignInRequest, code_challenge,
 };
 
 fn repo() -> RepoRef {
@@ -535,6 +535,7 @@ async fn random_faults_fail_a_share_of_the_calls_after_the_given_ones() {
         seed,
         unavailable_percent: 20,
         rate_limited_percent: 10,
+        lost_answer_percent: 0,
         rate_limited_until: until,
     };
     let first = outcomes(&repo, random(3)).await;
@@ -579,4 +580,153 @@ async fn random_faults_fail_a_share_of_the_calls_after_the_given_ones() {
     );
 
     sim.fail_at_random(None);
+}
+
+fn fast_forward(fixture: &crate::contract::Fixture, sha: &str) -> PrMerge {
+    PrMerge {
+        number: fixture.mergeable_pr,
+        head_sha: sha.into(),
+        tested_sha: sha.into(),
+        method: MergeMethod::FastForward,
+        title: String::new(),
+        message: String::new(),
+    }
+}
+
+#[tokio::test]
+async fn a_lost_answer_leaves_the_effect_of_the_call() {
+    let repo = repo();
+    let (sim, fixture) = contract_world(&repo).unwrap();
+    let head = sim.branch(&repo, "feature").unwrap();
+    sim.lose_answer(Fault {
+        call: Some(ScmMethod::MergePr),
+        error: ScmError::Unavailable("502".into()),
+        times: 1,
+    });
+
+    let lost = sim
+        .merge_pr(&repo, &fast_forward(&fixture, &head), JobClass::Merge)
+        .await;
+    let again = sim
+        .merge_pr(&repo, &fast_forward(&fixture, &head), JobClass::Merge)
+        .await;
+
+    assert_eq!(lost, Err(ScmError::Unavailable("502".into())));
+    assert_eq!(sim.branch(&repo, "main"), Some(head.clone()));
+    assert_eq!(again, Ok(head));
+}
+
+#[tokio::test]
+async fn a_lost_answer_of_a_failing_call_reports_the_failure_of_the_call() {
+    let repo = repo();
+    let (sim, _) = contract_world(&repo).unwrap();
+    sim.lose_answer(Fault {
+        call: Some(ScmMethod::SetBranch),
+        error: ScmError::Unavailable("502".into()),
+        times: 1,
+    });
+
+    let lost = sim
+        .set_branch(&repo, "main", "unknown", BranchMove::Force, JobClass::Merge)
+        .await;
+
+    assert_eq!(
+        lost,
+        Err(ScmError::Validation("unknown commit unknown".into()))
+    );
+}
+
+#[tokio::test]
+async fn random_lost_answers_only_hit_the_calls_that_change_the_scm() {
+    let repo = repo();
+    let (sim, fixture) = contract_world(&repo).unwrap();
+    let head = sim.branch(&repo, "feature").unwrap();
+    sim.fail_at_random(Some(RandomFaults {
+        seed: 1,
+        unavailable_percent: 0,
+        rate_limited_percent: 0,
+        lost_answer_percent: 100,
+        rate_limited_until: OffsetDateTime::UNIX_EPOCH,
+    }));
+
+    let read = sim
+        .pull_request(&repo, fixture.mergeable_pr, JobClass::Merge)
+        .await;
+    let lost = sim
+        .merge_pr(&repo, &fast_forward(&fixture, &head), JobClass::Merge)
+        .await;
+
+    assert!(read.is_ok(), "{read:?}");
+    assert!(lost.is_err(), "{lost:?}");
+    assert_eq!(sim.branch(&repo, "main"), Some(head));
+}
+
+#[tokio::test]
+async fn a_fast_forward_of_a_closed_pr_is_refused() {
+    let repo = repo();
+    let (sim, fixture) = contract_world(&repo).unwrap();
+    let head = sim.branch(&repo, "feature").unwrap();
+    sim.change_pr(&repo, fixture.mergeable_pr, PrChange::Close)
+        .unwrap();
+
+    let merged = sim
+        .merge_pr(&repo, &fast_forward(&fixture, &head), JobClass::Merge)
+        .await;
+
+    assert_eq!(merged, Err(ScmError::MergeRejected("PR closed".into())));
+}
+
+#[tokio::test]
+async fn a_fast_forward_does_not_read_the_mergeability_of_the_pr() {
+    let repo = repo();
+    let (sim, fixture) = contract_world(&repo).unwrap();
+    let head = sim.branch(&repo, "feature").unwrap();
+    sim.change_pr(
+        &repo,
+        fixture.mergeable_pr,
+        PrChange::Mergeability(Some(Mergeability::Blocked)),
+    )
+    .unwrap();
+
+    let merged = sim
+        .merge_pr(&repo, &fast_forward(&fixture, &head), JobClass::Merge)
+        .await;
+
+    assert_eq!(merged, Ok(head));
+}
+
+#[tokio::test]
+async fn a_stale_name_finds_no_repository() {
+    let repo = repo();
+    let (sim, fixture) = contract_world(&repo).unwrap();
+    sim.rename_repo(&repo.external_id, "new-name");
+
+    let stale = sim
+        .pull_request(&repo, fixture.mergeable_pr, JobClass::Merge)
+        .await;
+    let renamed = RepoRef {
+        name: "new-name".into(),
+        ..repo
+    };
+    let current = sim
+        .pull_request(&renamed, fixture.mergeable_pr, JobClass::Merge)
+        .await;
+
+    assert!(matches!(stale, Err(ScmError::NotFound(_))), "{stale:?}");
+    assert!(current.is_ok(), "{current:?}");
+}
+
+#[tokio::test]
+async fn a_read_of_the_checks_gives_at_most_the_number_of_the_contract() {
+    let repo = repo();
+    let (sim, _) = contract_world(&repo).unwrap();
+    let head = sim.branch(&repo, "feature").unwrap();
+    for n in 0..MAX_CHECKS_PER_READ + 50 {
+        sim.report_check(&repo, &head, success(&format!("check-{n}")))
+            .unwrap();
+    }
+
+    let checks = sim.checks(&repo, &head, JobClass::Merge).await.unwrap();
+
+    assert_eq!(checks.len(), MAX_CHECKS_PER_READ);
 }

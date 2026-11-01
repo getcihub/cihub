@@ -448,6 +448,21 @@ async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let closed = scm.pull_request(repo, number, CLASS).await.unwrap();
 
     assert_eq!(closed.state, PrState::Closed);
+
+    let fast_forward = PrMerge {
+        number,
+        head_sha: closed.head_sha.clone(),
+        tested_sha: closed.head_sha,
+        method: MergeMethod::FastForward,
+        title: String::new(),
+        message: String::new(),
+    };
+    let refused = scm.merge_pr(repo, &fast_forward, CLASS).await;
+
+    assert!(
+        matches!(refused, Err(ScmError::MergeRejected(_))),
+        "a closed PR does not fast forward: {refused:?}"
+    );
     scm.delete_branch(repo, work, CLASS).await.unwrap();
 }
 

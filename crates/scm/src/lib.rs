@@ -76,7 +76,7 @@ pub use person::{
     SignInCode, SignInRequest, SignedIn, code_challenge,
 };
 pub use repo::{
-    BranchMove, CommitStatus, DraftPr, MAX_OPEN_PRS, MAX_PRS_PER_READ, MergeIntoRef, PrMerge,
-    PrSnapshot, RepoCalls, RequiredChecks, SetupFinding, StatusUpdate,
+    BranchMove, CommitStatus, DraftPr, MAX_CHECKS_PER_READ, MAX_OPEN_PRS, MAX_PRS_PER_READ,
+    MergeIntoRef, PrMerge, PrSnapshot, RepoCalls, RequiredChecks, SetupFinding, StatusUpdate,
 };
 pub use scm::{ConnectionRef, RepoRef, Scm, ScmFuture, ScmUser};
