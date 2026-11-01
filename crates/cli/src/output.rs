@@ -154,7 +154,16 @@ impl Screen {
             write!(out, "\x1b[{}F\x1b[J", self.drawn_lines)?;
         }
 
+        // The line count holds only if no line wraps: the terminal cuts each
+        // line at its width, with autowrap off while the text is written.
+        if self.style.is_terminal {
+            out.write_all(b"\x1b[?7l")?;
+        }
         out.write_all(text.as_bytes())?;
+        if self.style.is_terminal {
+            out.write_all(b"\x1b[?7h")?;
+        }
+
         out.flush()?;
         self.drawn_lines = text.lines().count().max(1);
         Ok(())
@@ -267,5 +276,45 @@ mod tests {
         ] {
             assert_eq!(duration(seconds), text);
         }
+    }
+
+    #[test]
+    fn a_terminal_cuts_the_lines_of_a_redraw_at_its_width() {
+        let mut screen = Screen::new(TERMINAL);
+        let mut out = Vec::new();
+        let wide_line = "x".repeat(1000);
+
+        screen
+            .draw(&mut out, &format!("{wide_line}\nshort\n"))
+            .unwrap();
+
+        let written = String::from_utf8(out).unwrap();
+        assert_eq!(written, format!("\x1b[?7l{wide_line}\nshort\n\x1b[?7h"));
+    }
+
+    #[test]
+    fn a_redraw_goes_back_one_row_per_line() {
+        let mut screen = Screen::new(TERMINAL);
+        let mut out = Vec::new();
+
+        screen
+            .draw(&mut out, &format!("{}\nshort\n", "x".repeat(1000)))
+            .unwrap();
+        out.clear();
+        screen.draw(&mut out, "next\n").unwrap();
+
+        let written = String::from_utf8(out).unwrap();
+        assert!(written.starts_with("\x1b[2F\x1b[J"));
+    }
+
+    #[test]
+    fn a_pipe_gets_the_text_of_a_redraw_without_escapes() {
+        let mut screen = Screen::new(PIPE);
+        let mut out = Vec::new();
+
+        screen.draw(&mut out, "first\n").unwrap();
+        screen.draw(&mut out, "second\n").unwrap();
+
+        assert_eq!(String::from_utf8(out).unwrap(), "first\nsecond\n");
     }
 }
