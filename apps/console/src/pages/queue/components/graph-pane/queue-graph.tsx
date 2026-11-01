@@ -6,6 +6,7 @@ import { CardHeader, CardHint, CardTitle, cardVariants } from "@cihub/ui/compone
 import { useFlip } from "@cihub/ui/hooks/use-flip";
 import { cn } from "@cihub/ui/lib/cn";
 import { itemStateLabel } from "@/domain/pr/words";
+import { isStopped } from "@/domain/queue/attention";
 import { shortSha } from "@/lib/text";
 import { Chip } from "./graph-chip";
 import { LiveMark } from "./live-mark";
@@ -114,7 +115,7 @@ export function QueueGraph({
       label: "Queued",
       items: queued,
       textOf: titleOf,
-      foot: queue.state === "paused" ? "Paused" : "Waits for room in the window",
+      foot: isStopped(queue) ? "Paused" : "Waits for room in the window",
     },
   ];
   const lanes = [...waitingLanes.filter((lane) => lane.items.length > 0), ...runLanes.reverse()];

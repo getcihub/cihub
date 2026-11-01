@@ -480,7 +480,8 @@ pub(super) async fn get_queue(
 /// Change the state of a queue
 ///
 /// Asks the queue for `running`, `paused` or `draining`; the queue changes
-/// at its next reconciliation.
+/// at its next reconciliation. A queue that lost its access takes the state
+/// and stays stopped until the access comes back.
 #[utoipa::path(
     patch,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}",

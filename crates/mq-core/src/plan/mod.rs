@@ -6,7 +6,7 @@
 //! decisions with `apply` thus gives the same state.
 
 use cihub_config::QueueSettings;
-use cihub_domain::{Actor, Event, EventId, EventKind, ItemId, QueueState, RunId};
+use cihub_domain::{Actor, Event, EventId, EventKind, ItemId, RunId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -229,7 +229,7 @@ fn next_step(
     now: OffsetDateTime,
     ids: &mut IdGen,
 ) -> Option<Step> {
-    if s.state == QueueState::Paused {
+    if s.is_stopped() {
         return requests(s, settings, now, ids);
     }
     RULES.iter().find_map(|rule| rule(s, settings, now, ids))

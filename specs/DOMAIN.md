@@ -107,8 +107,7 @@ Families of reasons, to find one's way: admission and test; return to `pending` 
 of the batch left with `batch_member_left`, restart, `urgent` preemption, bisection); `tests_passed`; `merged`;
 `cancelled`; `start_test_run_*` (failure at the assembly of the test branch); `test_run_*` (failure or timeout of the run); failure of the merge call
 (`merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`,
-`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons,
-including `access_lost` and `access_restored` when CIHub loses or regains its access to the repository.
+`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons.
 
 Each reason has a sentence in English for a person, `Reason::describe` (for example `pr_pushed_to`: "the PR
 received a new commit after its submission"): the PR comment and status, the API (`state_description`) and the
@@ -166,6 +165,9 @@ States (`QueueState`): `running` accepts and merges; `paused` decides nothing an
 the order, and a submission there waits for the resume; `draining` lets what is in flight merge and
 refuses a new submission, whose item is created `cancelled` with the reason `queue_draining`;
 `switching_modes` is reached automatically when the mode changes with items in flight and behaves like
-`draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
+`draining` (reason `queue_switching_modes`) until the queue is empty. The state is the choice of the admin and
+of the mode switch; the access is apart: `access.lost` stops the queue whatever its state, which stays as it is, and
+`access.restored` lets it go on in that state. An operator request without the access changes the state, and the
+queue stays stopped until the access comes back. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`
 (`specs/CONFIGURATION.md`).

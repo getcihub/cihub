@@ -1,4 +1,5 @@
 import type { ItemState, Pr, Queue } from "@/client/types.gen";
+import { isStopped } from "@/domain/queue/attention";
 
 // The words of specs/DOMAIN.md, as the mockups v5 show them.
 const ITEM_STATE_LABELS: Record<string, string> = {
@@ -67,7 +68,7 @@ export function tabTitleOf(firstPr: Pr | undefined, queues: Queue[]): string {
 export function whereAmong(pr: Pr, queues: Queue[]): string {
   const queue = queueOfPr(pr, queues);
 
-  return whereOf(pr, queue?.state === "paused", pr.queue);
+  return whereOf(pr, queue !== undefined && isStopped(queue), pr.queue);
 }
 
 /** The estimate of the server, as "about 12 min"; `null` without one. */

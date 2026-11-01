@@ -170,11 +170,19 @@ describe("the page of a queue", () => {
   });
 
   it("says that a lost access stops it, rather than a pause", async () => {
-    const lost = detailOf(entry, { state: "paused", is_suspended: true });
+    const lost = detailOf(entry, { state: "running", is_suspended: true });
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, lost] }));
 
     expect(await screen.findByText("CIHub lost its access to acme/web.")).toBeInTheDocument();
     expect(screen.queryByText(/^Paused/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the pause of an admin in view while the access is lost", async () => {
+    const lost = detailOf(entry, { state: "paused", state_changed_by: "hugo", is_suspended: true });
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, lost] }));
+
+    expect(await screen.findByText("CIHub lost its access to acme/web.")).toBeInTheDocument();
+    expect(screen.getByText(/^Paused by @hugo/)).toBeInTheDocument();
   });
 
   it("says how a pull request enters a queue with nothing in it and nothing in the last 24 hours", async () => {

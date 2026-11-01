@@ -362,6 +362,11 @@ fn queue_view(style: Style, repo: &str, queue: &Queue, prs: &[Pr], now: OffsetDa
         style.paint(&queue.state.as_str().replace('_', " "), state_color),
         style.paint(&summary.join(" · "), Some(Color::Dim)),
     );
+    if queue.is_suspended {
+        let line =
+            "CIHub lost its access to the repository: the queue merges nothing until it returns.";
+        let _ = writeln!(text, "{}", style.paint(line, Some(Color::Red)));
+    }
     if let Some(error) = &queue.config_error {
         let line = format!("The configuration file is not valid: {error}");
         let _ = writeln!(text, "{}", style.paint(&line, Some(Color::Red)));
@@ -616,6 +621,27 @@ mod tests {
         assert!(
             queue_view(COLORS, "acme/app", &queue("main"), &live_prs(), now)
                 .contains("\x1b[33mtesting\x1b[0m")
+        );
+    }
+
+    #[test]
+    fn a_terminal_says_that_the_queue_lost_its_access() {
+        let mut suspended = queue("main");
+        suspended.is_suspended = true;
+
+        assert_eq!(
+            queue_view(
+                TERMINAL,
+                "acme/app",
+                &suspended,
+                &[],
+                at("2026-10-29T09:04:00Z")
+            ),
+            "acme/app · queue of main · running\n\
+             2 in the queue · 1 run live · median run 12m · 14 merged in the last 24h\n\
+             CIHub lost its access to the repository: the queue merges nothing until it returns.\n\
+             \n\
+             No PR in the queue of main.\n"
         );
     }
 
