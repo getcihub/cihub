@@ -347,8 +347,8 @@ Decisions (October 29, 2026, validated by the project lead):
     `a_watch_follows_a_pr_until_it_ends` against Postgres and the simulator, in `cihub-mergequeue` (`merged`, then
     `failed` after its runs fail, then `merged` again by polling once the server refuses a ninth stream). Tested
     by hand on `cihub-dev` (`getcihub/testing`, PR #58), in a terminal and in a pipe.
-  - Remaining: the redraw of a watch counts the lines of its text; a line wider than the terminal wraps, and the
-    next redraw leaves its first part on the screen.
+  - Fixed (CIH-57): a terminal draws a watch with autowrap off (`ESC[?7l` … `ESC[?7h`), so that it cuts each line at
+    its width and the count of lines is the count of rows.
 
 ### Lots 10a to 10d: dashboard
 
