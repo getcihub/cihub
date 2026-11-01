@@ -440,8 +440,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
     }
 }
 
-/// A push that arrives late (its `after`, or its `before`, is a past head)
-/// changes nothing: the tick reads the real head.
+/// A push belongs to the queue only when its `before` is unknown or is the
+/// head: another `before` means that commits came in between. A push that
+/// arrives late (its `after` is a past head, or its `before` is a past head
+/// and its `after` a SHA of the queue) changes nothing: the tick reads the real
+/// head. A late push from outside invalidates the bases but keeps the head.
 fn target_pushed(
     snapshot: &mut Snapshot,
     event: &Event,
@@ -451,12 +454,20 @@ fn target_pushed(
     let target = &mut snapshot.target;
     let head = target.head.as_ref().map(|h| h.value.as_str());
     let past = |sha: &str| target.recent_heads.iter().any(|h| h == sha);
+    let is_late = before.is_some_and(|b| Some(b) != head && past(b));
+    let is_known_own = target.own_shas.remove(after);
 
-    if head == Some(after) || past(after) || before.is_some_and(|b| Some(b) != head && past(b)) {
+    if head == Some(after) || past(after) || (is_late && is_known_own) {
         return Outcome::Ignored;
     }
 
-    let own = event.actor == Actor::Bot || target.own_shas.remove(after);
+    if is_late {
+        target.valid_bases.retain(|b| Some(b.as_str()) == head);
+
+        return Outcome::Applied;
+    }
+
+    let own = (event.actor == Actor::Bot || is_known_own) && before.is_none_or(|b| Some(b) == head);
 
     if let Some(old) = target.head.take() {
         target.recent_heads.push_back(old.value);

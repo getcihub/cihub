@@ -459,6 +459,91 @@ fn an_external_push_restarts_every_group() {
     assert_replays(&w);
 }
 
+fn user() -> Actor {
+    Actor::User {
+        user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+    }
+}
+
+fn push_from(w: &mut World, before: &str, after: &str) {
+    w.fact(
+        user(),
+        EventKind::TargetPushed {
+            before: Some(before.to_owned()),
+            after: after.to_owned(),
+            sender_id: None,
+        },
+    );
+}
+
+fn merge(w: &mut World, pr_number: u64, merged_sha: &str) {
+    let merges = w.reconcile().desired.merges;
+    let item_id = merges
+        .iter()
+        .find(|m| m.pr_number == pr_number)
+        .unwrap()
+        .item_id;
+    w.fact(
+        Actor::System,
+        EventKind::MergeSucceeded {
+            item_id,
+            merged_sha: merged_sha.into(),
+        },
+    );
+}
+
+#[test]
+fn an_outside_push_delivered_after_the_own_push_restarts_the_groups() {
+    let mut w = world();
+    let base = w.snapshot.target.head.clone().unwrap().value;
+    for pr in 1..=2 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=2 {
+        w.report(pr, CheckConclusion::Success);
+    }
+
+    merge(&mut w, 1, "own");
+    push_from(&mut w, "outside", "own");
+    push_from(&mut w, &base, "outside");
+
+    assert_eq!(w.state(2), Some(ItemState::Testing));
+    assert!(decided_with(&w, Reason::ManualPushToTargetBranch));
+    assert_eq!(w.snapshot.target.head.clone().unwrap().value, "own");
+    assert_replays(&w);
+}
+
+#[test]
+fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
+    let mut w = World::new(settings(window(3)));
+    let base = w.snapshot.target.head.clone().unwrap().value;
+    for pr in 1..=3 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=3 {
+        w.report(pr, CheckConclusion::Success);
+    }
+
+    merge(&mut w, 1, "own1");
+    merge(&mut w, 2, "own2");
+    w.fact(
+        Actor::System,
+        EventKind::TargetPushed {
+            before: None,
+            after: "own2".into(),
+            sender_id: None,
+        },
+    );
+    push_from(&mut w, &base, "own1");
+    push_from(&mut w, "own1", "own2");
+
+    assert_eq!(w.state(3), Some(ItemState::TestsPassed));
+    assert!(!decided_with(&w, Reason::ManualPushToTargetBranch));
+    assert_replays(&w);
+}
+
 #[test]
 fn a_late_push_changes_nothing() {
     let mut w = world();
