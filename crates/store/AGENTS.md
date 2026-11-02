@@ -9,5 +9,5 @@
 - A state transition is an `UPDATE … WHERE id = $1 AND state = $2` whose row count is checked.
 - The Postgres enums mirror `cihub-domain` through `as_str` and `FromStr`; a test compares `pg_enum` with the
   variants.
-- Tests: `#[sqlx::test]` in `tests/postgres.rs`, a fresh database per test, `mise run rust:integration`.
+- Tests: `#[sqlx::test]` in `tests/postgres.rs`, a fresh database per test.
 - Spec: `specs/DATA_MODEL.md`.

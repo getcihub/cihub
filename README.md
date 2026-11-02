@@ -13,9 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="INSTALL.md"><b>Install</b></a> ·
+  <a href="https://cihub.io/docs/install"><b>Install</b></a> ·
   <a href="#how-the-merge-queue-works"><b>How it works</b></a> ·
-  <a href="GOAL.md"><b>Why</b></a> ·
   <a href="AGENTS.md"><b>Contribute</b></a>
 </p>
 
@@ -42,14 +41,7 @@ passes. No rebase loop, no broken `main`, no "who merged that?".
 
 ## Install
 
-[`INSTALL.md`](INSTALL.md) takes you from zero to your first merged pull request in about 30 minutes, with Docker
-Compose or the Helm chart.
-
-## Compared with other merge queues
-
-If you use the GitHub merge queue, Mergify, Trunk, Aviator, Graphite or bors,
-[`specs/COMPETITION.md`](specs/COMPETITION.md) compares them with CIHub: the ideas that CIHub takes from each one,
-and where it is different.
+[The install guide](https://cihub.io/docs/install) takes you from zero to your first merged pull request in about 30 minutes, with Docker Compose or the Helm chart.
 
 ## Status
 
@@ -61,8 +53,7 @@ can change without notice from one version to the next.
 
 ## Contribute
 
-Read [`GOAL.md`](GOAL.md) for what CIHub is for and [`AGENTS.md`](AGENTS.md) for how we build it, with or
-without a coding agent.
+Read [`AGENTS.md`](AGENTS.md) for how we build CIHub, with or without a coding agent.
 
 ## License
 

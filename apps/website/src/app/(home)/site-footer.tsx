@@ -27,9 +27,6 @@ export function SiteFooter() {
               <li>
                 <a href="#config">Configuration</a>
               </li>
-              <li>
-                <a href="#compare">Compare</a>
-              </li>
             </ul>
           </div>
           <div>
@@ -57,9 +54,6 @@ export function SiteFooter() {
               </li>
               <li>
                 <a href={changelogUrl}>Changelog</a>
-              </li>
-              <li>
-                <a href={`${repositoryUrl}/blob/main/GOAL.md`}>Why CIHub</a>
               </li>
               <li>
                 <a href={`${repositoryUrl}/blob/main/AGENTS.md`}>Contribute</a>

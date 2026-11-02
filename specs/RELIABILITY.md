@@ -1,52 +1,136 @@
 # Reliability and failure handling
 
-The correctness promise of the queue is that a PR is merged only after a successful test run on a commit whose tree equals what the target branch will contain; the resilience promise is that no intention is ever lost: a submission, a command, a check result survive crashes, lost webhooks, GitHub outages and concurrent operators, and are at worst delayed. The mechanisms are the event log, idempotent convergence toward a desired state, the repair loop, the scheduled SCM budget, and explicit degraded modes rather than implicit behaviors under stress.
+This spec gives the promises of the queue under failure, and the rules that keep them: what each failure costs and
+who catches it up. It does not give the numbers of each retry or delay; they are constants in the code that each
+section names. The mechanisms are the event log, idempotent convergence, the repair loop, the scheduled SCM budget
+and explicit degraded modes.
 
-| Failure                                                             | Detection                                                                                                                                                                                                                                                                    | Treatment                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Scheduler crash during a reconciliation                             | The transaction is rolled back; the transaction lock is released                                                                                                                                                                                                             | The next replica replays the reconciliation from the same state; no partial write exists                                                                                                                                                              |
-| Worker crash during a job                                           | `locked_until` expires                                                                                                                                                                                                                                                       | The job is resumed; each executor reads GitHub first (does the branch exist? is the PR merged? does the comment exist?) and skips the steps already done through the `idempotency_key` of each step                                                   |
-| Lost GitHub webhook (GitHub does not retry a failed delivery)       | The inbox insert precedes any processing and answers in under 2 s; a sweep every 5 minutes (`sweep_deliveries` job) lists the attempts of the last 10 minutes through `GET /app/hook/deliveries` and redelivers the deliveries that no attempt delivered, that is with no 2xx status code, since CIHub answers 2xx only after it stores a delivery; the tick rereads the live PRs and the silent runs | A delay of at most one sweep or one tick, never a lost transition                                                                                                                                                                                      |
-| A delivery that always fails (a stored file that this version refuses, a bad row) | The pass of the deliveries of the connections reads each delivery in a savepoint and counts the failure in `webhook_inbox.attempts`; at 5 failures, `set_aside_at` is set and no pass reads the delivery; the `error` log `connection_delivery.set_aside` names it | The other deliveries go on, in every organization; the comment of the delivery set aside has no effect until an operator clears `attempts` and `set_aside_at` (`specs/DATA_MODEL.md`), or the user writes it again |
-| Out-of-order webhooks                                               | `received_at` and GitHub timestamps                                                                                                                                                                                                                                          | Sequential processing per queue; a `check_run` for a SHA that no run expects is stored then ignored; a report does not take a check back to an earlier status unless it started after its end                                                                                                                                                   |
-| Duplicate webhook delivery                                          | `X-GitHub-Delivery` unique in `webhook_inbox` while the delivery waits; once processed, the delivery is deleted, and its jobs are keyed by its identifier                                                                                            | The second insert has no effect while the delivery waits; a delivery processed again writes no wrong fact and asks each of its jobs at most once                                                                                                        |
-| GitHub 5xx at merge                                                 | HTTP code                                                                                                                                                                                                                                                                    | The `merge_pr` job retries the call with the backoff, then gives `merge_repeated_server_errors` after 6 attempts, about 60 s                                                                                                     |
-| GitHub 405 "merge already in progress"                              | HTTP code                                                                                                                                                                                                                                                                    | Retry with backoff; before giving up, read the PR: merged = success, open and on the base = close without resubmitting, otherwise `merge_already_in_progress`                                                                                          |
-| GitHub 403 at merge for a stacked PR                         | HTTP code and message that names the asynchronous endpoint | Merge again through `merge-async` as a direct merge; `pending` or `409` = retry with backoff, `merged` = success, `failed` or `400` = `merge_rejected`; at the end of the attempts, `merge_already_in_progress` |
-| 409 at merge (different `sha`)                                      | HTTP code                                                                                                                                                                                                                                                                    | `pr_updated_at_merge_time`; the item fails, the user resubmits                                                                                                                                                                                         |
-| PR merged outside the queue                                         | The `merge_pr` job reads the PR before merging it                                                                                                                                                                                                                            | `merge.failed` with `pr_already_merged`: the item becomes `merged`/`manual_merge` and the downstream tests again on the real target |
-| A batch member fails to merge                                       | Result of the merge job                                                                                                                                                                                                                                                      | The members behind it in the batch and all downstream groups restart; only the faulty member goes to `failed`                                                                                                                                          |
-| Primary rate limit (429, or 403 with `x-ratelimit-remaining: 0`)    | Headers                                                                                                                                                                                                                                                                      | The per-connection budget tracking pauses all its jobs until the reset; a run waits instead of failing for 15 min, then `merge_rate_limit_exceeded` on the merge path or `start_test_run_retry_exhausted` at assembly                                  |
-| Secondary rate limit (403 with `Retry-After`)                       | Headers                                                                                                                                                                                                                                                                      | Same tracking, exponential backoff, alert beyond 3 occurrences per hour                                                                                                                                                                                |
-| 422 at assembly (validation, for example an existing ref)           | HTTP code                                                                                                                                                                                                                                                                    | The executor rereads the ref and continues if it already matches; otherwise 5 attempts then `start_test_run_retry_exhausted`. Another transient error (5xx, 429, shutdown) does not count: the job waits up to 15 minutes after the start of the run |
-| Merge conflict at assembly                                          | 409 on the merges API                                                                                                                                                                                                                                                        | On the merge of the member: `start_test_run_merge_conflict`, with as `conflict_culprit` the target branch or the PR ahead of it that the executor identifies by replaying the merges (`specs/ALGORITHMS.md`); the item fails, its dependents restart. On the merge of a predecessor: the job retries, the run of that predecessor decides |
-| Branch protection blocks the test branch                            | 403 at ref creation                                                                                                                                                                                                                                                          | `start_test_run_permissions_block_test_branch`; reported by the configuration checker                                                                                                                                                                  |
-| External push on the target                                         | `push` whose `sender` is not the bot and whose `after` is not a recorded `merged_sha`                                                                                                                                                                                        | All runs are invalidated, the groups restart with `manual_push_to_target_branch`                                                                                                                                                                       |
-| Test branch superseded while its CI is still running                | Run marked `interrupted`                                                                                                                                                                                                                                                     | Draft PR closed and branches deleted after `keep_test_branches_minutes`; workflows cancelled if `actions: write` is granted (after Lot 6); late reports stored then ignored                                         |
-| Postgres failover                                                   | Connection errors                                                                                                                                                                                                                                                            | the sqlx pool reopens its connections; a reconciliation in flight fails and is replayed; jobs and outbox survive                                                                                                                                       |
-| ClickHouse unavailable                                              | Insert errors                                                                                                                                                                                                                                                                | Outbox rows accumulate with backoff; merges are not affected; alert at 10 min of lag                                                                                                                                                                   |
-| Customer webhook endpoint unreachable                               | Non-2xx response                                                                                                                                                                                                                                                             | Retries over 24 h, endpoint disabled after 7 days, visible in the dashboard                                                                                                                                                                            |
-| SCM unavailable at the check of the access of a person | The request answers `503 scm_unavailable`; an access read less than an hour ago needs no call | No request of a session reads an access older than an hour until the SCM answers again; the queues, their jobs and the API tokens go on, since they never check the access of a person |
-| Token of a person refused by the SCM | The SCM answers a refresh, a read or a check with a refusal | CIHub forgets the token and the permissions that it read, and ends every session of the person (`401`): they sign in again |
-| Repository removed from the installation | `installation_repositories` webhook; without it, the hourly `sync_repos` | The repository gets `removed_at` and its queues `access.lost`: they stop and keep their state, and their items remain; when the installation lists it again, `access.restored`. A lost webhook costs at most 1 hour |
-| Installation suspended or App uninstalled | `installation` webhook; without it, the sync of the installation at the next delivery of the connection when its last sync is older than 1 hour, when `sync_repos` or `sync_members` answers that the access is lost, and the full sync every 24 hours | The sync sets `suspended_at` and gives `access.lost`: the queues stop and keep their state, which the admin can still change; the items remain; the end of the suspension gives `access.restored`, the queues go on in their state, and the reconciliation revalidates the items. A lost `installation` webhook costs at most 24 hours, or 1 hour on a connection with activity |
-| App installed, `installation` webhook lost | The first delivery of the installation, which CIHub does not know, or the full sync at the start of the server and every 24 hours | The sync creates the organization, its connection and the read of its repositories; the delivery of the unknown installation is deleted |
+## Promises
 
-At startup, each scheduler replica marks the queues that have a live item. Repair loop. The plan requests the due reads, and each one returns its facts through `queue_inbox`: each live PR is reread every 15 minutes (`refresh_prs`); the checks of the test SHA of an `in_progress` run without a report for 10 minutes are reread every 10 minutes (`refresh_checks`), which also recreates a deleted test branch at the test SHA; the head of the target is reread every 5 minutes as long as the queue has work, or every minute as long as it does not know it (`refresh_target`, fact `target.pushed` without `before` or `sender_id`). The push of a queue merge can arrive before the fact of the merge: as long as a `merge_pr` job of the queue is waiting or running, or its `merge.succeeded` fact waits in `queue_inbox` (the job gives back its fact before it ends, so a reconciliation can read the inbox before the fact and the jobs after the end), a push delivery on the target whose SHA is not a known merge waits for the next reconciliation, and `refresh_target` does not read the head. A push on a branch that had no queue when the routing read it goes to no queue: the connection deliveries pass requests `refresh_target` from the queue of the branch, if it exists by then, after the end of a merge in flight of that queue. A check that concludes on the head of a `not_ready` item is routed to no queue either: the connection deliveries pass requests at once a `refresh_prs` of that PR from the queue of the item, in class `interactive`, keyed on the delivery; the 15-minute reads stay the fallback when the delivery is lost. At each new head of the target, `load_config` reads the configuration file; it writes nothing if the target has moved since, and a rejected file leaves the queue on the last valid file. The setup of each queue whose connection is not suspended, what the rules of the SCM miss, is read again when its last read is one hour old (`read_setup`, requested by the scheduler, which looks for them every 5 minutes, the first time 5 minutes after its start; a queue whose read waits gets no other one, and each read runs at a moment of the hour that its queue keeps, so that the reads of many queues do not come together): the SCM sends no event when a rule changes. The `sync_queue` function of `cihub-mergequeue` requests all these reads in class `interactive`, the setup read included; its route arrives in Lot 9.
+- **REL-1** A PR merges only after a test run that passed on a commit whose tree equals what the target branch
+  will contain (principle IV).
+- **REL-2** No intent is lost: a submission, a command or a check result survives a crash, a lost webhook, an SCM
+  outage and concurrent operators, and is at worst delayed (principle V).
+- **REL-3** GitHub is the source of truth for the git state, Postgres for the queue state. When they disagree, the
+  queue believes GitHub and records the transition with its reason (`manual_merge`, `pr_closed`).
 
-Degraded modes, per connection, decided by the SCM budget and the repair loop, shown in the interface with their cause:
+## Ingestion and deliveries
 
-| Mode                 | Entry                                                  | What continues                                                         | What stops                                                              | Exit                                                             |
-| -------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `normal`             | —                                                      | Everything                                                             | —                                                                       | —                                                                |
-| `throttled`          | Remaining budget under 20%, or secondary limit hit     | Commands, statuses, merges of the groups already green                 | New speculation branches; the window contracts to the floor             | Budget above 40% for 5 min                                       |
-| `scm_unavailable`    | 3 consecutive network or 5xx failures on the connection | Ingestion, log, decisions; jobs accumulate with their class           | Every outgoing call except a probe every 30 s                           | Successful probe; replay of the jobs by class, `interactive` first |
-| `paused`             | Admin, or connection suspended by the SCM              | Ingestion and log; PRs can be submitted                                | Decisions and effects                                                   | Resume by an admin, with revalidation of the items               |
+Code: `crates/platform/src/inbox.rs` (`MAX_DELIVERY_ATTEMPTS`), `crates/platform/src/sweep.rs`
+(`SWEEP_DELIVERIES`, `SWEEP_LOOKBACK`), `crates/mergequeue/src/scheduler.rs`
 
-These modes apply to a connection; a Postgres outage stops every process, by construction, and recovery happens by replay of the inbox and of the expired leases. Resilience is proven by fault injection tests run in continuous integration: a GitHub simulator that randomly returns 5xx, 429, lost, duplicated or out-of-order webhooks, and schedulers killed at random instants, with as oracle that at the end every green PR is merged exactly once, in graph order, and that every red PR carries a reason. The test runs with the default strategy and with `batched` (batches, bisection, failure depth and optimistic merge); in its CI, a red PR fails every run that tests its code. A monthly chaos exercise replays the same thing on the staging instance.
+- **REL-4** The ingestion stores a delivery before any processing and answers 2xx only after it stored it.
+  GitHub does not retry a failed delivery: the `sweep_deliveries` job lists the recent attempts and redelivers each
+  delivery that no attempt delivered.
+- **REL-5** A delivery is unique by its `X-GitHub-Delivery` while it waits; once processed it is deleted, and its
+  jobs are keyed by its identifier, so a delivery processed again asks each job at most once.
+- **REL-6** The pass of the deliveries reads each one in its own savepoint. A delivery that always fails is set
+  aside after `MAX_DELIVERY_ATTEMPTS`, and the deliveries of the other organizations go on.
+- **REL-7** Deliveries of one queue are processed in order. A report for a SHA that no run expects is stored and
+  ignored (`specs/DOMAIN.md`, DOM-17, for a late report of a check).
 
-Consistency rules that the reconciler enforces at each pass, and that a nightly job also checks over the whole database: each `testing` item belongs to exactly one group that has a run in progress; an item is in at most one live group, apart from the groups in bisection, which keep the members that their halves test; an item of a live group has the state of its group, except in a `tests_passed` group, whose first members may already be `merged`; each `predecessor_ids` of a live group has merged, or is live and ahead of it in order; the number of runs in progress outside bisection never exceeds the window ceiling; an item in `tests_passed` has a successful run, and no push from outside the queue arrived after the formation of its group; `is_current` is true for at most one item per PR.
+## Jobs and idempotency
 
-GitHub is the source of truth for the git state, Postgres for the queue state. In case of disagreement (a PR that Postgres believes in the queue is actually merged or closed on GitHub), the reconciler believes GitHub and records the transition with `manual_merge` or `pr_closed`. A full sync of a queue (`POST /orgs/{org}/repos/{repo}/queues/{queue}/sync`, admins only) rereads from GitHub each live PR and each run in progress: it is the emergency exit after an incident.
+Code: `crates/platform/src/jobs.rs` (`claim_jobs`, `JOB_LOCK`, `MAX_ATTEMPTS`), `crates/platform/src/lease.rs`
 
-Capacity limits protect the shared database: at most 500 live items per queue, 20 MB per impacted targets upload, 2,000 webhook deliveries per minute and per connection before deliveries drop to low priority, and 100 jobs in flight per connection.
+- **REL-8** A crash during a reconciliation rolls back its transaction; the next holder of the lease redoes the
+  same work, and no partial write exists.
+- **REL-9** A job of a stopped worker is taken back when its lock expires. Each executor reads the real state
+  first (does the branch exist, is the PR merged, does the comment exist) and skips what is already done.
+- **REL-10** A Postgres failover fails the reconciliation in flight, which is replayed; jobs survive.
+
+## SCM errors at assembly and merge
+
+Code: `crates/mergequeue/src/assembly.rs` (`ASSEMBLY_ATTEMPTS`, `ASSEMBLY_WAIT`), `crates/mergequeue/src/merge.rs`
+(`MERGE_ATTEMPTS`, `MERGE_RATE_LIMIT_WAIT`)
+
+- **REL-11** A 5xx at merge is retried with the backoff of the jobs, then gives `merge_repeated_server_errors`.
+- **REL-12** Before it gives up on "merge already in progress", the merge job reads the PR: merged is a success,
+  because the merge can have succeeded. A 403 that names the asynchronous merge endpoint merges again through it.
+- **REL-13** A refused `sha` guard gives `pr_updated_at_merge_time`; a PR found merged before the call becomes
+  `merged` with `manual_merge`.
+- **REL-14** A rate limit pauses every job of the connection until its reset. A run waits instead of failing, up to
+  a bound, then gives `merge_rate_limit_exceeded` or `start_test_run_retry_exhausted`.
+- **REL-15** At assembly, a validation error rereads the ref and goes on if it already matches; a transient error
+  (5xx, rate limit, shutdown) does not count as an attempt. A 403 at ref creation gives
+  `start_test_run_permissions_block_test_branch`.
+
+## External drift
+
+Code: `crates/mq-core/src/apply.rs` (`target_pushed`), `crates/mergequeue/src/repair.rs`
+
+- **REL-16** An outside push on the target invalidates every run (`specs/ALGORITHMS.md`, ALG-37). A test branch
+  deleted by hand is created again at its test SHA by the read of the checks.
+
+## Degraded modes
+
+Code: `crates/github/src/budget.rs` (`Budget::admit`, `Budget::observe`, the thresholds), `crates/domain/src/tenancy.rs`
+(`ConnectionMode`)
+
+- **REL-17** A connection is `throttled` when its budget is low or a secondary rate limit hit it. Only the calls of
+  class `speculate` wait; the commands, the statuses and the merges go on. The window does not change.
+- **REL-18** A connection is `scm_unavailable` after consecutive failures: only one probe call goes out at an
+  interval, and the jobs accumulate with their class. A call that answers ends the mode.
+- **REL-19** A mode applies to one connection and is shown with its cause. A Postgres outage stops every process,
+  and the recovery is the replay of the inbox and of the expired leases.
+
+## Repair loop
+
+Code: `crates/mq-core/src/plan/reads.rs` (`wake_at`), `crates/mergequeue/src/repair.rs` (`REFRESH_CHECKS`,
+`REFRESH_TARGET`, `sync_queue`), `crates/mergequeue/src/jobs/refresh.rs` (`REFRESH_PRS`),
+`crates/mergequeue/src/config.rs` (`READ_SETUP_EVERY`)
+
+- **REL-20** The plan requests the due reads of the live PRs, of the checks of a silent run and of the head of the
+  target (`specs/ALGORITHMS.md`, ALG-43, ALG-44). Each read gives its facts back through `queue_inbox`. A lost
+  webhook costs at most one read interval.
+- **REL-21** While a merge job of the queue waits or runs, or its fact waits in `queue_inbox`, a push on the target
+  that is not a known merge waits for the next reconciliation, and the target is not read. The push of a queue
+  merge can arrive before the fact of the merge.
+- **REL-22** A check that concludes on the head of a `not_ready` item requests at once a read of its PR, in class
+  `interactive`; the periodic read stays the fallback when that delivery is lost.
+- **REL-23** At each new head of the target, `load_config` reads the configuration file. A rejected file leaves the
+  queue on the last valid file.
+- **REL-24** The setup of each queue is read again every `READ_SETUP_EVERY`, spread over the hour per queue,
+  because the SCM sends no event when a rule changes.
+- **REL-25** `sync_queue` (`POST /orgs/{org}/repos/{repo}/queues/{queue}/sync`) requests all these reads at once in
+  class `interactive`: the way out after an incident.
+
+## Access loss
+
+Code: `crates/platform/src/installations.rs` (`SYNC_AFTER`, `request_installations_sync`),
+`crates/platform/src/connections.rs` (`SYNC_REPOS`), `crates/platform/src/persons.rs` (`ACCESS_LIFETIME`)
+
+- **REL-26** A repository removed from the installation, or a suspended or removed installation, gives
+  `access.lost` to its queues: they stop and keep their state, which the admin can still change, and their items
+  stay (`specs/DOMAIN.md`, DOM-19). The return of the access gives `access.restored`: the queues go on in their
+  state, and the reconciliation checks the items again.
+- **REL-27** Without its webhook, the access change is caught by the sync of the installation at the next delivery
+  of an active connection, by a sync job that the SCM refuses, or by the full daily sync. An unknown installation
+  is created by its first delivery or by that sync.
+- **REL-28** An SCM outage during the check of the access of a person fails only the sessions whose read is old;
+  queues, jobs and API tokens never check the access of a person. A token of a person that the SCM refuses ends
+  every session of the person.
+
+## Consistency invariants
+
+Code: `crates/mq-core/src/check.rs` (`check`, `Violation`)
+
+- **REL-29** `check` gives every consistency rule that a snapshot breaks. The rules are in `Violation`; the tests
+  of `cihub-mq-core` call it.
+
+## Fault-injection oracle
+
+Code: `crates/mergequeue/tests/postgres.rs` (`fault_injection`), `crates/scm/src/sim/`
+
+- **REL-30** The fault-injection test plays the queue against the GitHub simulator with random 5xx and rate limits,
+  lost, duplicated and reordered webhooks, and processes killed at random. The oracle: each green PR merges exactly
+  once, in queue order, each red PR fails with a reason, and a rebuild by replay gives the same projections.
+- **REL-31** It runs with the default strategy and with `batched`, so that batches, bisection, depth and
+  optimistic merge are covered.
+
+## Capacity limits
+
+Code: `crates/platform/src/jobs.rs` (`JOBS_PER_CONNECTION`)
+
+- **REL-32** A connection has at most `JOBS_PER_CONNECTION` jobs running. A connection at its quota is left out
+  before the claim, so that its backlog does not hide the jobs of the others.

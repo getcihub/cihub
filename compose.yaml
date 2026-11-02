@@ -23,7 +23,7 @@
 # Compose reads every variable of this file, whatever the active profiles:
 # a variable of the server profile has a `:-` default, never `:?`, so that
 # Postgres starts without them. cihub-server stops at startup on a missing
-# value (specs/LESSONS.md).
+# value (specs/LESSONS.md, L-CI-6).
 name: cihub
 x-healthcheck: &healthcheck
   interval: 30s

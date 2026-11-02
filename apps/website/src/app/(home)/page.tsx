@@ -488,25 +488,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div className="band" id="compare">
-        <div className="wrap in">
-          <div>
-            <h2>Coming from another merge queue?</h2>
-            <p>The comparison shows the ideas that CIHub takes from each one, and where it is different.</p>
-            <p className="more">
-              <a className="link-arrow" href={`${repositoryUrl}/blob/main/specs/COMPETITION.md`}>
-                Read the comparison
-              </a>
-            </p>
-          </div>
-          <div className="peers">
-            {["GitHub merge queue", "Mergify", "Trunk", "Aviator", "Graphite", "bors"].map((peer) => (
-              <span key={peer}>{peer}</span>
-            ))}
-          </div>
-        </div>
-      </div>
-
       <section className="final">
         <div className="wrap">
           <Mark className="mark" />

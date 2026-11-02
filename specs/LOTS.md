@@ -19,7 +19,7 @@ rewrites.
 
 | Phase                       | Lots            | Scope                                                                                                                                                                                                                                                                                                                                                             | Exit criterion                                                                                                                                                                |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, Helm chart and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following `INSTALL.md`; measured in lot 15 |
+| 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, Helm chart and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following the install guide; measured in lot 15 |
 | 2. Throughput and visibility | 9b, 10 to 12, 16 | Conditions status of a PR, dashboard, onboarding (the Setup URL of the App, the setup of a repository before its first queue), Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
 | 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                                            | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
@@ -110,7 +110,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
   permission cache and message of a refused submission.
 - **Frozen interfaces**: API v1 published in `/api/v1/openapi.json`; PR commands; CLI commands.
 - **Exit criterion**: an end-to-end test on the staging instance submits PRs on a real repository and merges
-  them; the CIHub repository moves to its own queue; an outside person follows `INSTALL.md` and merges a first
+  them; the CIHub repository moves to its own queue; an outside person follows the install guide and merges a first
   PR in less than 30 minutes (criterion of phase 1, measured by hand).
 - **Tracking**:
   - Steps: 1. start of an organization; 2. PR surfaces; 3. API v1; 4. client and CLI;
@@ -309,7 +309,7 @@ Decisions (October 29, 2026, validated by the project lead):
 - `cihub app create` and the manifest flow of `cihub-github` are removed: the command line talks to the public
   API of an instance only (`specs/LESSONS.md`).
 - The output follows the principles of the command lines that people already know (a table in a terminal, plain
-  columns in a pipe), without taking their flags or their formats (`specs/COMPETITION.md`).
+  columns in a pipe), without taking their flags or their formats.
 - Colors are written by hand, without a dependency; `NO_COLOR` turns them off.
 - `cihub queue watch` follows the stream of the organization (`GET /orgs/{org}/stream`) and reads again on each
   `queue_changed` of its queue; after `429 too_many_streams`, it reads every 10 seconds instead.
@@ -373,7 +373,7 @@ Decisions:
 - **Goal**: a person signs in with the SCM and sees the organizations that the App serves for them.
 - **Content**: `GET /auth/github`, `GET /auth/github/callback` and `POST /auth/sign-out`, outside `/api/v1`;
   `sessions` table (14 days, revocable) and `memberships` table, filled from the SCM membership and refreshed
-  every hour (`specs/SCHEMA_PLAN.md`); same-site cookie and CSRF token on every `POST`, `PATCH` and `DELETE` of a
+  every hour (`specs/DATA_MODEL.md`); same-site cookie and CSRF token on every `POST`, `PATCH` and `DELETE` of a
   session; `GET /api/v1/me` (login, organizations with their role, version of the instance, installation URL of
   the App); a session is a second authentication of every route, and its role gives the scopes (`member`:
   `queues:read`, `prs:write`; `admin`: every scope); the sign-in flow in the simulator; a server on the
@@ -626,7 +626,7 @@ Decisions:
 
 - **Goal**: a person who installs the App goes from GitHub to the first queue of a repository without help. Before
   that queue, the dashboard says what the branch rules of the repository miss and what its `.cihub.yaml` holds
-  (`GOAL.md`: simple to install, every decision explained). A person reads in CIHub only the repositories that
+  (simple to install, every decision explained). A person reads in CIHub only the repositories that
   GitHub shows them.
 - **Content**:
   - The Setup URL of the App, `GET /auth/github/installed`, with "Redirect on update". It trusts no
@@ -696,9 +696,9 @@ Decisions:
 - **Decisions** (October 17, 2026, validated by the project lead):
   - One word, `sync`: a sync copies an object of the SCM into CIHub, and `POST …/sync` asks for one now. `resync`
     is gone from the routes and the code.
-  - CIHub keeps the token of the person (`specs/LESSONS.md`, "Forget the token of the person at the end of the
-    sign-in"), and a person reads only the repositories that the SCM shows them, checked again after an hour, on
-    the SCM with their token; `503 scm_unavailable` when it does not answer.
+  - CIHub keeps the token of the person (`specs/LESSONS.md`, L-GH-5), and a person reads only the repositories
+    that the SCM shows them, checked again after an hour, on the SCM with their token; `503 scm_unavailable` when
+    it does not answer.
   - The sign-in connects every unknown installation of the person, not 10 at most: the list that it reads already
     gives what a sync reads.
   - Everything that belongs to a repository is under it: `GET /orgs/{org}/repos/{repo}/prs` (filter `queue`) and
@@ -750,7 +750,7 @@ Decisions:
     `access.lost` and `access.restored` to the queues of the repository; the end of the suspension of a connection
     restores no queue of a removed repository; `Queue.is_suspended` counts a removed repository. `Org.is_suspended`
     is true when the organization has connections and every one is suspended (`ORG_IS_SUSPENDED` in
-    `cihub-store`). The Setup URL in `specs/GITHUB.md` (step 8), `INSTALL.md` and `scripts/smoke.sh`. Tests:
+    `cihub-store`). The Setup URL in `specs/GITHUB.md` (step 8), the install guide and `scripts/smoke.sh`. Tests:
     `the_setup_url_trusts_only_the_installations_of_the_person`,
     `a_sign_in_connects_the_installations_that_cihub_does_not_know`,
     `a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_back`, and the suspension of an
@@ -861,7 +861,7 @@ Decisions (October 14, 2026, validated by the project lead):
   mockups v8), 11b (Prometheus), 11c (outgoing webhooks).
 - `cihub-analytics` is a new crate. The facts are four tables, `an_item_conclusions`, `an_state_durations`,
   `an_test_run_results` and `an_check_results`; the hourly aggregate (`an_hourly_queue_stats`, or the
-  `measurements` table of `specs/SCHEMA_PLAN.md`) comes when a range is longer than 30 days.
+  `measurements` table) comes when a range is longer than 30 days.
 - A route per view: the server computes the Health of a queue, its verdict included, and the dashboard holds no
   queue logic.
 - Lot 11a does not wait for lot 10c: the duration of the checks and the CI time stay empty until the times of a
@@ -1011,10 +1011,10 @@ Decisions (October 14, 2026, validated by the project lead):
 - **Exit criterion**: criterion of phase 3; with the module disabled, the queue suite passes without any
   change; the oracle answers in less than 50 ms at p99 on 1 M results.
 - **Open questions**:
-  - **Q1** The reason `tests_restarted_flake_suspected` (`specs/FLAKY_TESTS.md`) is not in the closed vocabulary.
+  - **Q1** The reason `tests_restarted_flake_suspected` (Linear, "Flaky tests module") is not in the closed vocabulary.
   - **Q7** OpenTelemetry semantic conventions for tests: follow the proposal of the CI/CD group, or freeze
     `cihub.*` attributes as long as it is not stable.
-  - **Q12** `specs/FLAKY_TESTS.md` subscribes the module to `mergequeue.run.completed`, which is not an event
+  - **Q12** The plan of the module (Linear, "Flaky tests module") subscribes the module to `mergequeue.run.completed`, which is not an event
     type of `specs/DOMAIN.md` (`run.transitioned`?).
 
 ---

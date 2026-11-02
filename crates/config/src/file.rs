@@ -196,7 +196,8 @@ mod tests {
     use super::*;
     use crate::{ConfigErrorKind, Position, Source};
 
-    /// The example of the spec, section Configuration.
+    /// A file that uses each kind of key: queues, a glob, conditions,
+    /// profiles, priority rules and `defaults`.
     const SPEC_EXAMPLE: &str = r"version: 1
 queues:
   - branch: main
