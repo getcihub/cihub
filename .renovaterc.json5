@@ -54,5 +54,19 @@
       groupName: "Rust toolchain",
       groupSlug: "rust-toolchain",
     },
+    {
+      description: "The Rust image of the Dockerfile, in the same PR as the Rust of mise.toml",
+      matchManagers: ["dockerfile"],
+      matchDepNames: ["docker.io/library/rust"],
+      groupName: "Rust toolchain",
+      groupSlug: "rust-toolchain",
+    },
+    {
+      description: "Node in mise.toml and in the Dockerfile, in one PR",
+      matchManagers: ["mise", "dockerfile"],
+      matchDepNames: ["node", "docker.io/library/node"],
+      groupName: "Node.js",
+      groupSlug: "nodejs",
+    },
   ],
 }

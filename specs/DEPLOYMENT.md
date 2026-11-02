@@ -40,7 +40,7 @@ Code: `Dockerfile`, `.github/workflows/image.yaml`
 - **DEP-10** The image runs `cihub-server` on a distroless `nonroot` base; its entry point is the binary and its
   default command `start`. It does not contain the `cihub` command line.
 - **DEP-11** The build stages use the Node and the Rust of `mise.toml`, on the glibc of the runtime stage; every
-  base image is pinned by its digest, with the tag as a comment.
+  base image is pinned by its tag and its digest, so that Renovate updates both in the PR of the `mise.toml` tool.
 - **DEP-12** The TLS client reads the root certificates of the system, which the runtime image provides; the binary
   embeds no list.
 - **DEP-13** The dashboard is embedded in the binary at build time (`crates/web/build.rs`); a build without
@@ -95,8 +95,8 @@ Code: `.github/workflows/ci.yaml`, `.github/workflows/image.yaml`, `.github/work
   which publishes the image, the chart and the `cihub` binaries. The image and the chart are signed with cosign,
   keyless, with the OIDC identity of the workflow.
 - **DEP-31** The `cihub` Linux binaries link musl statically, so that they run on any distribution.
-- **DEP-32** Renovate opens PRs for the actions, the tools of `mise.toml`, the crates and the images of the chart;
-  no PR merges automatically.
+- **DEP-32** Renovate opens PRs for the actions, the tools of `mise.toml`, the crates, the images of the
+  `Dockerfile` and of the chart; no PR merges automatically.
 
 ## Pointers
 
