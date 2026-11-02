@@ -277,6 +277,16 @@ run = [
 description = "Lint the GitHub workflows with actionlint and zizmor"
 run = ["actionlint", "zizmor .github/workflows"]
 
+[tasks."tla:check"]
+description = "Check the TLA+ models of specs/tla with TLC: each case of specs/tla/cases.tsv must give its expected verdict"
+# Only this task needs Java: a tool of [tools] would install in every CI job.
+tools = { java = "temurin-25.0.5+8.0.LTS" }
+run = "scripts/tla-check.sh"
+
+[tasks."tla:pin"]
+description = "Write the hashes of the code that the TLA+ models pin, once each model was read against that code and tla:check passes"
+run = "scripts/tla-pins.sh update"
+
 [tasks."helm:smoke"]
 description = "Install the chart with two replicas in a kind cluster against a CloudNativePG Postgres, then check it (needs docker)"
 run = "scripts/smoke.sh"

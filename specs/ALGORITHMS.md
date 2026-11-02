@@ -38,7 +38,7 @@ Code: `crates/mq-core/src/graph.rs` (`insertion_index`, `position_at`, `renumber
 - **ALG-6** Only `position` orders the queue. The priority decides only where a new item goes, so that a priority
   never reorders the items already in the queue.
 - **ALG-7** `urgent` goes in front of every non-urgent item except those in `tests_passed`: their merge can be in
-  flight, and a test that skipped them would not contain what lands.
+  flight, and a test that skipped them would not contain what lands (`specs/tla/Queue.tla`, `urgent_first`).
 - **ALG-8** `urgent` is the only insertion that interrupts a test. Another priority goes before the first
   `pending` item with a greater value: behind the groups in test, FIFO among equals.
 
@@ -152,7 +152,7 @@ Code: `crates/mq-core/src/apply.rs` (`target_pushed`), `crates/mq-core/src/plan/
 - **ALG-37** A push on the target is the queue's own when the App sent it or its `after` is the `merged_sha` of a
   queue merge of a `tests_passed` item or of the direct merge candidate, and its `before` is unknown or is the
   known head: another `before` means that commits came in between. Any other push replaces the base of every run
-  (`manual_push_to_target_branch`).
+  (`manual_push_to_target_branch`). `specs/tla/TargetHead.tla` checks these rules.
 - **ALG-46** A late push changes nothing, and the tick reads the real head: its `after` is a former head, or its
   `before` is a former head and its `after` a merge of the queue.
 - **ALG-47** A late push from outside (a former head as `before`, an `after` that the queue never saw) invalidates

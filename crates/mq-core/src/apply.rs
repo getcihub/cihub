@@ -369,6 +369,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             item_id,
             merged_sha,
         } => {
+            // tla: begin merge-succeeded-is-own
             // A merge of an item that is neither `tests_passed` nor the direct merge
             // candidate was not planned on the current bases, so its push must
             // clear them.
@@ -390,6 +391,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             if outcome == Outcome::Applied && is_own {
                 snapshot.target.own_shas.insert(merged_sha.clone());
             }
+            // tla: end merge-succeeded-is-own
             outcome
         }
         EventKind::MergeFailed {

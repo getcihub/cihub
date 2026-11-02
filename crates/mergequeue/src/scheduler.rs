@@ -399,6 +399,7 @@ impl Work<'_> {
                 sender,
                 ..
             } if branch == self.target.target_branch => {
+                // tla: begin target-push-waits
                 // The push of a merge of the queue may come before the fact
                 // of its merge: it waits for the merge job to end.
                 let own = snapshot.target.own_shas.contains(&after);
@@ -418,6 +419,7 @@ impl Work<'_> {
                         sender_id: Some(sender_id),
                     },
                 ));
+                // tla: end target-push-waits
             }
             ScmEvent::CheckChanged {
                 sha,
