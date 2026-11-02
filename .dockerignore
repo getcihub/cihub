@@ -11,3 +11,10 @@ helm/
 apps/console/dist/
 test-reports/
 apps/website/
+# What the build does not read, so that a change there does not rebuild the
+# binary. crates/web embeds crates/web/src/openapi.md.
+.github/
+scripts/
+specs/
+**/*.md
+!crates/**/*.md
