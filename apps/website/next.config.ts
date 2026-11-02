@@ -12,7 +12,7 @@ const machineFileHeaders = (contentType: string) => [
 
 const config: NextConfig = {
   reactStrictMode: true,
-  // The root of the repository: a page includes INSTALL.md, outside apps/website/.
+  // The root of the repository: the shared packages are outside apps/website/.
   turbopack: { root: join(import.meta.dirname, "..", "..") },
   // @cihub/icons is TypeScript source, compiled by each app.
   transpilePackages: ["@cihub/icons"],

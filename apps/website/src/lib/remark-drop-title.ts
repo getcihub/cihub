@@ -10,8 +10,8 @@ interface Node {
 }
 
 // A page has one H1, its title from the frontmatter. A Markdown file of the
-// repository that a page includes, such as INSTALL.md, keeps its own H1 for
-// GitHub; `<include>` puts its content in a nested root.
+// repository that a page includes keeps its own H1 for GitHub; `<include>`
+// puts its content in a nested root.
 export function remarkDropTitle() {
   return dropTitle;
 }

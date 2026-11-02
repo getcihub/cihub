@@ -27,7 +27,8 @@ closed_enum! {
     pub enum QueueState {
         /// Accepts and merges.
         Running,
-        /// Accepts nothing, merges nothing, keeps the order.
+        /// Decides nothing, merges nothing, keeps the order; a submission
+        /// waits as `not_ready` until the resume.
         Paused,
         /// Accepts nothing, lets in-flight items merge.
         Draining,

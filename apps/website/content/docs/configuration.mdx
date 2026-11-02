@@ -107,8 +107,10 @@ queue_conditions:
 
 `any:`, `all:` and `none:` take a list of maps. The attributes cover the state of the pull request (`draft`,
 `conflict`, `from_fork`, `behind_base`), its reviews, its checks, its labels, its author, its files and its size, its
-base and its head, and its position and age in the queue. The reference of every attribute is in
-[`specs/CONFIGURATION.md`](https://github.com/getcihub/cihub/blob/main/specs/CONFIGURATION.md#conditions).
+base and its head, and its position and age in the queue. The [JSON schema](https://cihub.io/schema/config/v1.json)
+describes every attribute, and
+[`specs/CONFIGURATION.md`](https://github.com/getcihub/cihub/blob/main/specs/CONFIGURATION.md#conditions) gives their
+rules.
 
 When a submitted pull request does not meet a condition, its comment names it: "the queue conditions `labels: ready`
 are not met".

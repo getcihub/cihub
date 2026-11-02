@@ -6875,7 +6875,7 @@ impl Chaos {
     }
 }
 
-/// The exit criterion of lot 7 (`specs/RELIABILITY.md`): on each seed, server
+/// The fault-injection oracle (`specs/RELIABILITY.md`, REL-30): on each seed, server
 /// errors and rate limits at random, webhooks lost, sent twice and reordered,
 /// and processes killed at random, each green PR is merged exactly once, in the
 /// order of the queue, and each red PR fails with a reason. `CIHUB_SIM_SEEDS`

@@ -10,7 +10,7 @@ use crate::LogsError;
 use crate::flat_json::FlatJson;
 
 /// The lines of the `json` format, kept in memory, for a test that checks a
-/// log (`specs/OBSERVABILITY.md`, rule 11). Install
+/// log (`specs/OBSERVABILITY.md`, OBS-20). Install
 /// [`CapturedLogs::subscriber`] with `tracing::subscriber::with_default`.
 #[derive(Clone, Debug, Default)]
 pub struct CapturedLogs(Arc<Mutex<Vec<u8>>>);

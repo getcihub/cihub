@@ -1378,44 +1378,7 @@
     color: #3ccb7f;
   }
 
-  /* Compare band, final call, footer */
-  .band {
-    margin-top: 112px;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    background: var(--card);
-  }
-  .band .in {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 48px;
-    padding: 48px 32px;
-    align-items: center;
-  }
-  .band h2 {
-    font-size: 26px;
-    letter-spacing: -0.02em;
-  }
-  .band p {
-    color: var(--secondary-foreground);
-    margin-top: 8px;
-  }
-  .band .more {
-    margin-top: 16px;
-  }
-  .peers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .peers span {
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 5px 10px;
-    color: var(--secondary-foreground);
-    background: var(--background);
-  }
+  /* Final call, footer */
   .final {
     padding: 120px 0 112px;
     text-align: center;
@@ -1515,7 +1478,6 @@
     .steps,
     .split,
     .split.reverse,
-    .band .in,
     footer.foot .in {
       grid-template-columns: 1fr;
     }

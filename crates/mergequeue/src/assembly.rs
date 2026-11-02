@@ -124,8 +124,8 @@ fn numbers(prs: &[u64]) -> String {
 
 /// The required statuses that `.cihub.yaml` gives for the queue of `branch`,
 /// or `None` when the file leaves them to the branch protection
-/// (`specs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
-/// entry in the file inherits them.
+/// (`specs/CONFIGURATION.md`, CFG-17: `null` or no key inherits). A queue
+/// without an entry in the file inherits them.
 ///
 /// # Errors
 ///
@@ -148,12 +148,13 @@ fn required_statuses_of_file(
     }
 }
 
-/// The names of the required statuses at `base_sha` (`specs/ALGORITHMS.md`): the
-/// list of the file of the repository on the target branch at `base_sha`, or
-/// else the rules of the target branch when `branch_protection_injection` lets
-/// them in, without the status of the queue itself; then the checks of the
-/// `merge_conditions`. `settings` gives the injection without a file; `rules`
-/// spares the read of the rules to a caller that already has them.
+/// The names of the required statuses at `base_sha` (`specs/ALGORITHMS.md`,
+/// ALG-16): the list of the file of the repository on the target branch at
+/// `base_sha`, or else the rules of the target branch when
+/// `branch_protection_injection` lets them in, without the status of the queue
+/// itself; then the checks of the `merge_conditions`. `settings` gives the
+/// injection without a file; `rules` spares the read of the rules to a caller
+/// that already has them.
 pub(crate) async fn required_statuses(
     scm: &dyn Scm,
     target: &QueueTarget,

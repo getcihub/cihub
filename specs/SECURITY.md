@@ -1,18 +1,127 @@
 # Security and multi-tenancy
 
-Tenancy is enforced on three layers: row level security in Postgres (and row policies in ClickHouse when it is enabled), organization-scoped identifiers at the API, and one GitHub installation token per installation, never shared between organizations. Nothing of one tenant can be inferred from the data of another, including through response time, because the reconcilers are per queue and the workers filter every query by `queue_id`.
+This spec gives the security rules of CIHub: how tenants stay apart, who is authenticated and how, what each
+grant reaches, how secrets are kept. The routes and the scopes are in `schema/openapi/v1.json` and `specs/API.md`;
+the row level security is in `specs/DATA_MODEL.md`; the values are the constants that each rule names.
 
-- Users sign in through the user authorization of the GitHub App, with PKCE (`specs/GITHUB.md`); a CIHub organization is attached to one or more SCM accounts, for example a GitHub organization, and the roles come from the GitHub membership of the connection (owners become `admin`, members `member`), refreshed every hour. A person reads in CIHub only the repositories that the SCM shows them: on a route of a repository, the scopes of a session come from the permission of its person on it (`read`: `queues:read`; `write`: `prs:write` too, to submit, cancel and restart a PR; `admin`: `queues:write` too, to change a queue and ask for a sync), and a repository without `read`, or that the organization does not have, answers `404 repo_not_found`; the middleware decides from the path parameters that the router matched and decoded, the ones that the handler reads, never from the raw path (`/repos/s%65cret` is `secret`); the lists and the stream of an organization leave out the others. The role in the organization gives the scopes of its routes, among them the audit log for an `admin`. A permission or a role older than an hour is checked again, in the request, on the SCM with the token of the person (never with the token of an installation); without an answer, `503 scm_unavailable`; a refused token ends every session of the person, `401`. An API token belongs to its organization and reads every repository of it, within its scopes. A `viewer` role for read-only dashboards and the change of a role by an admin come after lot 10d (`specs/LOTS.md`).
-- API tokens have the form `cht_` followed by 20 random bytes in base32, are shown only once, stored as SHA-256 fingerprints, scoped to an organization with the scopes listed in [API.md](API.md), with optional expiration and last-use tracking, to the minute.
-- A dashboard session is the cookie `__Host-cihub_session`, which holds `chs_` followed by 20 random bytes in base32 (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain`: the prefix `__Host-` stops another subdomain from planting one, and a request that carries it twice is refused); Postgres keeps only its SHA-256 fingerprint. A session lasts 14 days; the sign-out deletes it and clears its cookies, and the daily maintenance deletes the expired ones. It is never accepted as an API token. A sign-in in progress keeps its `state`, its PKCE verifier and the page to open after in the cookie `__Host-cihub_sign_in` (`HttpOnly`, 10 minutes), cleared by the callback; that page is a path of the instance, never another site, which the server and the dashboard both check. The Setup URL of the App starts a sign-in again: the `installation_id` of its address proves nothing and gives no role, and only the installations that the token of the person lists count. The pages of the dashboard carry `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`: no other site frames a page whose buttons act. The role of its user in the organization of the URL gives its scopes; an organization where the user has no role answers `404`. Every request of a session but `GET`, `HEAD` and `OPTIONS` carries the header `X-CSRF-Token`: the hexadecimal SHA-256 of a label and the secret of the session, which the server keeps nowhere and gives to the scripts of the dashboard in the cookie `__Host-cihub_csrf` (readable by a script, same attributes otherwise). A submission from a session carries the account of its user: the job checks its permission on the repository, `write`, as for a command in a comment.
-- A session of the command line holds `chc_` followed by 20 random bytes in base32, sent only in `Authorization: Bearer`; a session of the dashboard is accepted only in its cookie, and a session of the command line never in a cookie, so that one never stands for the other, and only a session of the dashboard approves a device code. Both live in `sessions`, as SHA-256 fingerprints. A session of the command line ends 90 days after its last use (each use pushes `expires_at` back, at most once an hour, so that a read does not write each time), or when `cihub auth logout` deletes it. A device code is two secrets: `device_code`, `chd_` followed by 20 random bytes, which only the command line knows and which Postgres keeps as a fingerprint, and `user_code`, 8 letters out of 20 (about 34 bits), which the person reads and types. Both expire after 15 minutes and serve once. The address that the command line shows never carries the code: the page `/device` asks the person to type it, then waits for a click on *Approve* or *Deny*, with the CSRF token of the session. A phishing of the code needs the person to type a code that someone else gave them, not one click on a link, and the page warns about a code that the person did not ask for. Guessing a user code needs a session of the dashboard, under its rate limit, and approving the code of someone else only gives them the session of the guesser. `POST /device-codes` and `POST /device-codes/token` need no token: the daily maintenance deletes the codes that expired, and a command line that asks sooner than `interval` gets `429 polling_too_fast`. Both routes accept a body of 4 KiB at most and 120 requests per minute per client address, in each replica (`429 rate_limited` with `Retry-After`); a command line makes 12 requests a minute while it waits, so about ten people behind one address sign in at once. The client address is the address of the connection; behind proxies, `CIHUB_HTTP_TRUSTED_PROXY_HOPS=N` takes the `N`-th address from the right of `X-Forwarded-For`, which the nearest trusted proxy appended, as the addresses to its left come from the client; a header with fewer than `N` addresses, or whose address does not parse, gives the address of the connection, never a value that the client can choose. Without the setting behind a proxy, every client shares the limit of the proxy.
-- The stream of an organization (`GET /orgs/{org}/stream`) checks its grant when it opens, as any route, then ends after 5 minutes: the browser opens it again with its session or token, so a revoked token, an ended session or a removed member hears the changes 5 minutes at most. A token or a person keeps 8 streams open at once; the ninth answers `429`.
-- PRs from forks cannot carry secrets: `impacted-targets` therefore also accepts a GitHub Actions run identifier; CIHub verifies through the API that the run is in progress, belongs to the repository and matches the announced head SHA.
-- The GitHub App private key, the webhook secret and the client secret of the App come from the environment or from the configuration file of `cihub-server`, which the operator feeds from its secret manager (Vault or the cloud KMS), and are read at startup into a `SecretString`. A configuration file that carries `database.url`, `database.secret`, `github.private_key`, `github.webhook_secret` or `github.client_secret` is a secret: the operator protects it as such (a Kubernetes Secret rather than a ConfigMap, mode 0600), or leaves these keys to the variables; installation tokens are cached in memory only. The token of a person who signs in, and its refresh token, are kept on `users`, sealed with AES-256-GCM under a key that HKDF-SHA256 derives from `database.secret` (at least 32 bytes, required with the sign-in), each bound to its row and column: a copy of the database alone opens none of them. CIHub refreshes a token that ends within 5 minutes, one refresh at a time per person since a refresh token works once, and forgets it at the sign-out of the last session of the person, at the daily maintenance once every session of the person has expired, and, with the permissions that it read, when the SCM refuses it. The permissions outlive the sign-out: the next sign-in shows the repositories at once while its sync reads them again, and a route of a repository checks its permission again past an hour as always; the daily maintenance deletes those that the SCM gave more than 14 days ago, the life of a dashboard session; after it, the first list of a command-line session waits for the sync that its request asks for. The token only reads: what the person reaches, never an action on the SCM. Customer webhook secrets are encrypted at rest with a per-organization data key.
-- The `cihub-sudo` App is opt-in per organization, installed separately, and its token is used only by the `merge_pr` job for direct-to-queue merges (a later lot); each of these merges is logged with the requesting user.
-- Commands from PR comments are honored only for users who have `write` on the repository; comments from the queue bot are ignored to avoid loops.
-- The CIHub Postgres role is neither superuser nor `BYPASSRLS`, because it would see every organization: otherwise `cihub-server` refuses to start.
-- Audit log: every setting change, pause, resume, drain, deletion, token creation and forced merge, with actor, IP and before/after values, kept 2 years.
-- The internal address (`CIHUB_INTERNAL_ADDR`) is separate from the public routes and must not be exposed on the Internet. The `/healthz` and `/readyz` probes are open and give only the name and the version of the binary; `/metrics` is anonymous by default; with `CIHUB_PROMETHEUS_ANONYMOUS_ACCESS=false`, it requires an admin or machine user (session of the request). Its labels name installations and queues of several organizations: an installation whose internal address is reachable by third parties must disable anonymous access.
-- All traffic is TLS 1.2 or higher; webhooks are verified with HMAC-SHA256 before any parsing; request bodies are capped at 25 MB; the dashboard uses same-site cookies and CSRF tokens.
-- Data residency: each instance is self-contained and keeps its data where it runs; a host that serves several regions deploys several instances, with no replication between them.
+## Tenancy layers
+
+Code: `migrations/20261026100000_create_tenancy_functions.up.sql`, `crates/web/src/api.rs`
+
+- **SEC-1** Tenancy holds on three layers: row level security in Postgres (`specs/DATA_MODEL.md`, DATA-6),
+  organization-scoped identifiers at the API, and one installation token per installation, never shared between
+  organizations.
+- **SEC-2** Nothing of one tenant can be inferred from the data of another, including through response time:
+  the reconcilers work per queue and the workers filter every query by `queue_id`.
+- **SEC-3** Each instance is self-contained and keeps its data where it runs; a host that serves several regions
+  deploys several instances, without replication between them.
+
+## Authentication
+
+Code: `crates/web/src/sign_in.rs` (`SESSION_LIFETIME`), `crates/web/src/session.rs` (`CLI_SESSION_IDLE_LIFETIME`),
+`crates/web/src/device.rs` (`DEVICE_CODE_LIFETIME`), `crates/domain/src/token.rs`
+
+- **SEC-4** A person signs in through the user authorization of the GitHub App, with PKCE (`specs/GITHUB.md`). A
+  sign-in in progress keeps its `state`, its verifier and the next page in the cookie `__Host-cihub_sign_in`
+  (`HttpOnly`, 10 minutes). The next page is a path of the instance, never another site.
+- **SEC-5** The Setup URL of the App only starts a sign-in again: its `installation_id` proves nothing and gives no
+  role; only the installations that the token of the person lists count.
+- **SEC-6** Every secret that CIHub gives (`cht_` API token, `chs_` dashboard session, `chc_` command-line
+  session, `chd_` device code) is a prefix and 20 random bytes in base32, shown once; Postgres keeps only its
+  SHA-256 fingerprint.
+- **SEC-7** A dashboard session lives in the cookie `__Host-cihub_session` (`HttpOnly`, `Secure`, `SameSite=Lax`,
+  `Path=/`, no `Domain`), so that another subdomain cannot plant one; a request that carries it twice is refused.
+  It lasts `SESSION_LIFETIME`; the sign-out deletes it.
+- **SEC-8** A dashboard session is accepted only in its cookie, and a command-line session only in
+  `Authorization: Bearer`, so that one never stands for the other. Neither is accepted as an API token.
+- **SEC-9** A command-line session ends `CLI_SESSION_IDLE_LIFETIME` after its last use; a use pushes `expires_at`
+  back at most once an hour, so that a read does not write each time.
+- **SEC-10** A device code is two secrets: `device_code`, which only the command line knows, and `user_code`,
+  8 letters out of 20 (about 34 bits), which the person types. Both expire after `DEVICE_CODE_LIFETIME` and serve
+  once.
+- **SEC-11** The address that the command line shows never carries the user code: the person types it on
+  `/device`, then approves with a dashboard session. A phishing then needs more than one click, and a guessed code
+  only gives its session to the guesser.
+- **SEC-12** Every request of a dashboard session but `GET`, `HEAD` and `OPTIONS` carries `X-CSRF-Token`: the
+  hexadecimal SHA-256 of a label and the session secret, which the server keeps nowhere and gives to the scripts
+  in the cookie `__Host-cihub_csrf`.
+- **SEC-13** The pages of the dashboard carry `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'`, because no other site may frame a page whose buttons act.
+
+## Authorization
+
+Code: `crates/web/src/api.rs` (`by_session`), `crates/platform/src/persons.rs` (`ACCESS_LIFETIME`)
+
+- **SEC-14** The roles come from the SCM membership of the connection (owners are `admin`, members `member`),
+  refreshed every hour. The role in the organization of the URL gives the scopes of its routes; an organization
+  where the user has no role answers `404`.
+- **SEC-15** A person reads only the repositories that the SCM shows them. On a route of a repository, the
+  permission of the person gives the scopes (`read`: `queues:read`; `write`: `prs:write` too; `admin`:
+  `queues:write` too); a repository without `read`, or outside the organization, answers `404 repo_not_found`.
+- **SEC-16** The middleware decides from the path parameters that the router matched and decoded, the ones that
+  the handler reads, never from the raw path (`/repos/s%65cret` is `secret`).
+- **SEC-17** A role or a permission older than `ACCESS_LIFETIME` is checked again in the request, on the SCM, with
+  the token of the person, never with an installation token. Without an answer, `503 scm_unavailable`; a refused
+  token ends every session of the person, `401`.
+- **SEC-18** An API token belongs to one organization and reads every repository of it, within its scopes.
+- **SEC-19** A command in a PR comment, or a submission from a session, is honored only for a user with `write`
+  on the repository; the job checks it. A check of the submission box by a bot is ignored
+  (`crates/github/src/translate.rs`), so that CIHub does not answer its own comment.
+- **SEC-20** A stream of an organization checks its grant when it opens, then ends after `STREAM_LIFETIME`
+  (`crates/web/src/stream.rs`), so that a revoked token, an ended session or a removed member stops hearing the
+  changes within that time.
+
+## Secrets and sealing
+
+Code: `crates/store/src/cipher.rs`, `crates/platform/src/persons.rs` (`TOKEN_MARGIN`)
+
+- **SEC-21** The secrets of the App and of the database come from the environment or the configuration file and
+  are read at startup into a `SecretString`. Installation tokens are cached in memory only.
+- **SEC-22** A configuration file that carries a secret key (`database.url`, `database.secret`, `github.*_secret`,
+  `github.private_key`) is a secret: a Kubernetes Secret rather than a ConfigMap, or mode 0600.
+- **SEC-23** The token and the refresh token of a person are kept on `users`, sealed with AES-256-GCM under a key
+  that HKDF-SHA256 derives from `database.secret`, each bound to its row and column, so that a copy of the database
+  alone opens none of them.
+- **SEC-24** CIHub refreshes a person token that ends within `TOKEN_MARGIN`, one refresh at a time per person,
+  because a refresh token works once.
+- **SEC-25** CIHub forgets the token of a person at the sign-out of their last session, at the maintenance once
+  each of their sessions has expired, and, with their permissions, when the SCM refuses it.
+- **SEC-26** The token of a person only reads what the person reaches; CIHub never acts on the SCM with it.
+- **SEC-27** The permissions outlive the sign-out, so that the next sign-in shows the repositories at once; the
+  maintenance deletes them after `PERMISSION_RETENTION` (`specs/DATA_MODEL.md`, DATA-26).
+
+## Abuse limits
+
+Code: `crates/web/src/api.rs` (`REQUESTS_PER_MINUTE`, `MAX_BODY_BYTES`, `SIGN_IN_REQUESTS_PER_MINUTE`,
+`SIGN_IN_MAX_BODY_BYTES`, `client_address`), `crates/web/src/stream.rs` (`STREAMS_PER_CALLER`)
+
+- **SEC-28** Each token or session has a rate limit per minute, and each request body a cap; a limit holds in each
+  replica, and a refused request gets `429` with `Retry-After`.
+- **SEC-29** The two routes without a token, `POST /device-codes` and `POST /device-codes/token`, have their own
+  lower limits per client address, and a command line that polls sooner than `interval` gets
+  `429 polling_too_fast`.
+- **SEC-30** The client address is the address of the connection, or, with `http.trusted_proxy_hops = N`, the
+  `N`-th address from the right of `X-Forwarded-For`, which the nearest trusted proxy appended. A bad header gives
+  the address of the connection, never a value that the client chooses.
+- **SEC-31** A token or a person keeps at most `STREAMS_PER_CALLER` streams open; the next one answers `429`.
+
+## Network surface
+
+Code: `crates/server/src/health.rs`, `crates/web/src/lib.rs`
+
+- **SEC-32** The internal address (`internal.addr`) serves only `/healthz` and `/readyz`, which give the name and
+  the version of the binary. It is separate from the public routes and must not be exposed on the Internet.
+- **SEC-33** A webhook is verified with HMAC-SHA256 before it is parsed.
+- **SEC-34** CIHub serves plain HTTP: the operator ends TLS in the proxy in front of it. The cookies are `Secure`,
+  so the dashboard works only over HTTPS.
+
+## Audit
+
+Code: `migrations/20261026100900_create_audit_log.up.sql`, `crates/mergequeue/src/api.rs` (`audit`),
+`crates/platform/src/tokens.rs`
+
+- **SEC-35** Each action of a person or a token through the API that changes a queue, a PR or a sync, and each
+  token creation, writes one row of `audit_log` with its actor, its target and its `after` value, in the
+  transaction of the action.
+- **SEC-36** Reading the audit log needs `queues:write`: an `admin` of the organization, or a token with that
+  scope.

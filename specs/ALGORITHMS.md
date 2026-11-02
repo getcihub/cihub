@@ -1,44 +1,181 @@
 # Queue algorithms
 
-A single algorithm covers the simple mode, the parallel mode, batching and bisection: one **reconciler** per queue recomputes a dependency graph (the merge graph) from the ordered list of admitted items, and a test run is valid only as long as the set of predecessors of the group and the base SHA are unchanged. Each function below is either a rule for building this graph or a rule for reacting to its change.
+The rules of the core of the queue. One reconciler per queue recomputes a merge graph from the ordered admitted
+items; a run is valid only while the predecessors of its group and its base SHA do not change. The same rules
+cover the simple and parallel modes, batching and bisection. The source of truth is `cihub-mq-core`; the settings
+and their defaults are in `crates/config/src/settings.rs` (`settings!`), the meaning of their values in
+`crates/domain/src/settings.rs`.
 
-**Conditions.** A queue declares two distinct sets of conditions, because confusing them is the most cited limit of the native GitHub queue: `queue_conditions` says what a PR must satisfy to be admitted (reviews, labels, author, touched files, checks on the PR itself) and `merge_conditions` what the speculative commit must satisfy to be merged (the required checks on the test branch, at least). The checks required by the rules of the target branch are injected according to `branch_protection_injection`: `both` (default) adds them to the `queue_conditions`, as `checks.success: <name>` on the head of the PR (without the queue status), and to the required statuses of the test SHA; `merge` adds them only to the test SHA; `none` adds them nowhere. For now, `merge_conditions` accepts only `checks.success`, whose names are added to the required statuses of the run. The conditions are deliberately small: typed YAML maps (`specs/CONFIGURATION.md`, section Conditions), whose about thirty attributes (list in `cihub-conditions`) cover the state of the PR, the reviews, the checks, the labels, the author, the files, the base and the head, and the position and the age in the queue. The same maps serve for the profiles and `priority_rules`. A PR enters the queue of its base branch: a branch has one queue (`specs/CONFIGURATION.md`). The jobs that read a PR evaluate its `queue_conditions` and return the ones that are not satisfied in `pr.observed`; the item then stays in `not_ready` with the block reason `queue_conditions_unmet`. Conditions count only before admission: a condition that becomes false does not remove an admitted item. `sender` and `sender_permission` come from the submission.
+## Conditions
 
-**Strategies.** The individual settings (batching, optimistic merge, parallel mode, direct merge) remain available, but a queue is configured first by a named strategy, `strategy`, which sets them consistently; choosing a strategy and then adjusting a setting is allowed, and the interface then flags the deviation from the strategy.
+Code: `crates/conditions/src/`, `crates/mq-core/src/plan/rules/readiness.rs` (`conditions_of`)
 
-| `strategy`           | What it enables                                                                                               | For whom                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `sequential`         | One PR tested at a time, `fast_forward` possible; `inplace` with a later lot     | Small repositories, short CI, no temporary branch, no protection bypass                |
-| `pipelined` (default) | Predictive tests with an adaptive window of 2–20, failure budget of 1 restart, no batches                    | Repositories with moderate traffic                                                     |
-| `batched`            | Batches of up to 4 PRs with a 5 min wait, bisection, `pending_failure_depth` = 1, optimistic merge       | Long and costly CI, many PRs per hour                                                  |
-| `parallel`           | Independent queues per impacted targets, batches per lane, optimistic merge                                   | Monorepos that publish their targets (Bazel, Nx, in-house script)                      |
+- **ALG-1** `queue_conditions` say what a PR needs to be admitted, `merge_conditions` what the test commit needs
+  to merge. They are two sets because one set is the most cited limit of the native GitHub queue.
+- **ALG-2** `branch_protection_injection` decides where the checks required by the rules of the branch go: the
+  conditions of the PR, the required statuses of the test commit, both, or none.
+- **ALG-3** Conditions count only before admission: an admitted item stays when a condition becomes false.
+- **ALG-4** A branch has one queue, and a PR enters the queue of its base branch.
 
-Each strategy is a simple table of default values on the existing settings; adding a new one requires no code in the core.
+## Strategies
 
-**Order.** Each admitted item receives a `position` (spaced 64-bit integer) that fully determines its place; items are sorted by `position` alone, and `priority_value` decides only the insertion point of a new item. `urgent` (value 0) goes ahead of the groups already in test, which is the only insertion that invalidates a test in progress, but behind the items in `tests_passed`: their merge may be in flight, and a test that skipped them would not contain what lands. Any other value is inserted before the first item that is not in test and whose `priority_value` is greater: `high` (10) items thus line up behind the groups in test, in FIFO order among themselves, and ahead of all `medium` (100) and `low` (200) items. Values 1 to 255 are accepted and never preempt.
+Code: `crates/config/src/settings.rs` (`strategy_layer`)
 
-**Merge graph.** Each item carries a set of targets `T(i)`: the impacted targets sent in parallel mode, or the `ALL` sentinel in simple mode (as well as for any PR that sent `ALL` or exceeded the 20 MB upload limit). Item `j` is a predecessor of `i` if `j` is ahead of `i` and there is a chain of items placed ahead of `i`, with pairwise overlapping target sets, that links `j` to `i`. Simple mode thus degenerates into a linear chain, and parallel mode produces independent lanes without ever naming them. An item is tested on top of exactly its predecessors and merges only once all its predecessors have merged.
+- **ALG-5** A strategy is a table of default values on the other settings, so a new strategy needs no code in the
+  core. A setting that a source sets wins over the strategy, and the interface shows the deviation.
 
-**Predictive test branch.** For a group `G` with ordered predecessors `P1..Pk`, the executor creates `cihub-temp/pr-<N>/<run_uuid>` at the head SHA of the target (`base_sha`), merges `P1..Pk` into it and then the members of `G` with the GitHub merges API (one call per PR head SHA, in order; a 204 means already contained and counts as a success), then creates the `cihub-merge/pr-<N>/<run_uuid>` reference at the resulting SHA through the git refs API and deletes the temporary reference: the CI thus sees a single branch creation push, for the final commit, and none for the intermediate merges. The prefixes are configurable per queue and cannot change while the queue contains live items. A 409 on the merge of a group member ends the run with `start_test_run_merge_conflict` and a `conflict_culprit` (`specs/DOMAIN.md`): `base_branch` when the member does not merge onto `base_sha` alone, otherwise the first PR ahead of it that does not merge onto `base_sha` plus the member, found by a second pass of merges in the conflict case only. A 409 on the merge of a predecessor concludes nothing: the run of that predecessor meets the same conflict and decides, the job retries later and finds its run superseded. Three trigger modes: in `draft_pr` mode, the executor then opens a draft PR from the test branch to the target branch, so that the CI triggered on `pull_request` runs without modification, and the queue closes it at the end; in `push` mode, the CI must trigger on `cihub-merge/**`; in `inplace` mode, reserved for the `sequential` strategy, no branch is created: the PR branch is updated onto the target by a merge (`update_method: merge`) and the CI of the PR itself is authoritative, which avoids any branch protection bypass requirement for small repositories; this mode arrives with a later lot. At the end of a run, the `cleanup_test_branch` job closes the draft PR and deletes the branches after `keep_test_branches_minutes`.
+| `strategy`            | For whom                                                                   |
+| --------------------- | -------------------------------------------------------------------------- |
+| `sequential`          | Small repositories, short CI, no temporary branch, no protection bypass    |
+| `pipelined` (default) | Repositories with moderate traffic                                         |
+| `batched`             | Long and costly CI, many PRs per hour                                      |
+| `parallel`            | Monorepos that publish their impacted targets (Bazel, Nx, in-house script) |
 
-**End of run.** The names of the required statuses come, in order of precedence, from the configuration file (`specs/CONFIGURATION.md`) read on the target branch at `base_sha` (never from the PR, so that a PR cannot weaken its own barrier), then from the protection of the target branch: the union of the `required_status_checks` of the classic protection and of the repository and organization rulesets that match the branch. An empty result fails the run with `start_test_run_no_required_statuses`. The run stores every `check_run` and `status` reported for the test SHA and marks the required ones. It passes when each required name has a terminal conclusion `success`, `neutral` or `skipped`; it fails at the first `failure`, `error`, `cancelled`, `timed_out`, `action_required` or `stale`; it expires after `testing_timeout_minutes` (300 by default) with `test_run_timeout`. Names match exactly; a name that never reports gives a timeout, not a failure. Reports tied to a SHA of a cancelled or superseded run are stored then ignored, and when the App has the optional `actions: write` permission, the executor cancels the running workflows of that run (after Lot 6).
+## Order and priority
 
-**Speculation window.** The number of groups tested at the same time is not a constant but an adaptive window, on the model of Zuul: `window.floor` (2 by default), `window.ceiling` (20), a current window that starts at the floor, grows by 1 at each successful run outside bisection and halves at each confirmed test failure (after the failure budget, or at bisection), without changing for a conflict, a configuration error or a merge failure. A reduced window interrupts no run in progress. A healthy queue opens up to the ceiling; a queue hit by flaky tests closes by itself and stops wasting CI on runs bound to restart. `testing_concurrency: N` is a shortcut for `window: { floor: N, ceiling: N }`; the two settings are mutually exclusive. A batch occupies one slot in the window; bisection runs draw from a separate pool, `bisection_concurrency` (equal to the ceiling by default). Slots are assigned in graph order. When the SCM budget of the connection enters `throttled` mode, the window does not change: the assembly jobs, of class `speculate`, wait for the budget.
+Code: `crates/mq-core/src/graph.rs` (`insertion_index`, `position_at`, `renumber`)
 
-**Batching.** Disabled by default. The reconciler forms a batch from the longest series of consecutive waiting items that share a lane and a profile (`specs/CONFIGURATION.md`), are not `no_batch` and are not blocked, up to the `batching.size` of their profile (4 by default); the size does not adapt. It starts the batch when it is full or when its oldest member has waited the `batching.max_wait_minutes` of its profile (5 by default) since its admission, or at once when the item right behind it is `no_batch` or has another profile, since the batch cannot grow. The members of a batch that waits show on their PR when it closes, not when its test starts, which also waits for room in the window (`specs/GITHUB.md`). When a member leaves a batch (cancelled, failed, merged outside the queue), the batch dissolves and the other members restart with `batch_member_left`, because their run tested its code. A `no_batch` item keeps its position and forms a group of a single PR. Batches are tested predictively like single items; each member still merges as its own commit, in order.
+- **ALG-6** Only `position` orders the queue. The priority decides only where a new item goes, so that a priority
+  never reorders the items already in the queue.
+- **ALG-7** `urgent` goes in front of every non-urgent item except those in `tests_passed`: their merge can be in
+  flight, and a test that skipped them would not contain what lands.
+- **ALG-8** `urgent` is the only insertion that interrupts a test. Another priority goes before the first
+  `pending` item with a greater value: behind the groups in test, FIFO among equals.
 
-**Bisection.** When the failure of a group of several PRs is confirmed (see pending failure: all its predecessors merged), a failed run or a merge conflict at its assembly, it is bisected at once, without a restart by the failure budget, and the first bisection of a batch closes the window by half. The group stays in `pending_failure` with the PRs that wait; its two halves (the first rounded up) go back to `pending` (`bisection_required`) and form child groups of kind `bisection` (their `parent_group_id` is the failed group), tested at the same time, the second on top of the first, from the separate pool `bisection_concurrency`; a half that finds no room in the pool waits in the group. The groups behind the failed group are given up (`prerequisite_merge_item_failed`), and no group forms on top of a PR in bisection until the bisection ends. When the child passes while a half waits, that half holds the failure: with `optimization_mode: bisection_skip_redundant_tests` (the default) it is split in turn without a run of its own, and its first half is tested (`bisection_test_run_passed`); a half of a single PR is tested alone, because an inferred failure never evicts a PR; with `off`, the half goes back to the queue and is tested as a batch. When the child fails or is given up, the half that waits goes back to the queue (`bisection_required`), and the child is bisected in turn when it has several PRs. A group whose PRs all left to its children ends `bisected`. A single PR in failure goes through the failure budget, then `failed`. Eight PRs with one culprit cost 3 rounds of runs to isolate it (4 + 4, 2 + 2, 1 + 1 PRs).
+## Merge graph
 
-**Pending failure and depth.** A group whose run fails goes to `pending_failure` and waits for each predecessor to reach a final state. If a predecessor failed, was cancelled or changed shape, the group restarts (`prerequisite_merge_item_failed`, etc.) with its new set of predecessors. If all predecessors merged, the group is the culprit, unless `pending_failure_depth` is `N > 0`: it then also waits for the first `N` successor groups whose runs include it to finish **their runs** (and not to reach their final state, which avoids a mutual wait); without such a successor, it does not wait. A group of several PRs waits in the same way before its first split. The set of successors is reevaluated at each reconciliation: a group admitted behind the failed group after the failure, with overlapping targets, thus counts. A successor run that passes releases the group (`successor_test_run_passed`) if optimistic merge is active. Otherwise the group becomes `failed` (single PR) or is bisected (batch), and its successors restart without it.
+Code: `crates/mq-core/src/graph.rs` (`targets`, `overlap`, `predecessors`)
 
-**Failure budget.** A single failure is never enough to designate a culprit. When a group of a single PR is in culprit position (all its predecessors merged, no successor released it), the queue first consumes its budget: the `failure_budget.retries` of its profile (1 by default) restarts of the run, and only the failed jobs when the CI allows it (`actions: write`), before declaring it `failed`. The budget is increased by one restart when the `FlakeOracle` contract recognizes the failed tests, and set to zero when the failure is a merge conflict or a configuration error, which are never transient. Shopify reports that a threshold of three consecutive failures brings false evictions down to 0.4% with a quarter of flaky tests; CIHub exposes the threshold and publishes, per queue, the rate of evictions that proved unjustified (the PR resubmitted without change passed), so that the team tunes it on its own numbers.
+- **ALG-9** An item has a set of impacted targets: those it sent in parallel mode, else `All`.
+- **ALG-10** `j` is a predecessor of `i` when `j` is ahead of `i` and a chain of items ahead of `i`, with pairwise
+  overlapping targets, links them. The simple mode is one chain; the parallel mode gives lanes without a name.
+- **ALG-11** An item is tested on top of exactly its predecessors and merges only after all of them merged.
 
-**Optimistic merge.** Disabled by default. When it is active, a run that passes proves all the groups it was built on: the reconciler thus marks all the groups ahead of it still in `testing` as `tests_passed` (`passed_by_optimization`) and interrupts their runs, and marks those in `pending_failure` as `tests_passed` (`successor_test_run_passed`); each affected item records the run of the successor in `verified_by_run_id`, and that run stays in the snapshot until the item ends. A group in bisection is not proved this way: its halves are, and the bisection goes on. The first effect requires a window ceiling (`window.ceiling`) greater than 1; the second requires `pending_failure_depth > 0`, since at depth 0 a failed group is evicted as soon as its predecessors merge. CIHub always restarts the downstream groups when a predecessor is evicted, because their tests included code that will not land.
+## Test branch assembly
 
-**Direct merge on main.** Enabled by default (`direct_merge_mode: always`); `off` keeps the rule that every merge goes through a test of the queue. With `always`, the first item of a `running` queue without a live group, in `pending`, receives a single direct merge attempt, without a test branch, and no group forms for it until the attempt has answered. The merge job checks before acting that the PR contains the current head of the target, that it is mergeable, and that the required statuses of a test commit on that head are green on the head of the PR, reading the rules of the branch once; it then merges the PR (`merge_graph_direct_merge`), otherwise the item follows the test path, without failure. With `squash`, `merge_commit` and `rebase`, a push on the target between the check and the merge is not detected; `fast_forward` refuses to advance a target that has moved.
+Code: `crates/mergequeue/src/assembly.rs` (`ASSEMBLE_TEST_BRANCH`)
 
-**External changes.** A `push` on the target branch belongs to the queue when its `sender` is the bot account of the App (`cihub-io[bot]`) or when its `after` SHA equals the `merged_sha` of a merge job for an item in `tests_passed`, or for the item of a direct merge (the first item of the queue, `pending`, with no live group); the merge of any other item, which tests did not contain, is recorded as `manual_merge` and its push is an outside push; a push of the queue must also have a `before` that is unknown or is the known head, since another `before` means that commits came in between; a push that arrives late (its `after` is a former head, or its `before` is a former head and its `after` belongs to the queue) changes nothing, and the tick rereads the real head; a late push from outside invalidates the tested bases but keeps the head; any other push invalidates all runs (the base SHA changed) and the affected groups restart with `manual_push_to_target_branch`. A PR of the queue merged outside the queue is marked `merged` (`manual_merge`) and its dependents restart with `prerequisite_merge_item_manually_merged`. A push on the head of a PR in the queue, a change of base branch, a switch to draft, a close or the removal of the entry label cancels the item with the matching reason; the PR must be resubmitted. Submissions, by command, checkbox or label, are honored only for open, non-draft PRs.
+- **ALG-12** The executor merges the predecessors, then the members, on a temporary branch at `base_sha`, then
+  creates the test branch at the result, so that the CI sees one push, for the final commit only.
+- **ALG-13** A conflict on a member gives `start_test_run_merge_conflict` with a `conflict_culprit`: `base_branch`,
+  or the first PR ahead that conflicts with it, which a second pass finds on a conflict only.
+- **ALG-14** A conflict on a predecessor concludes nothing: the run of that predecessor meets it and decides.
+- **ALG-15** The branch prefixes cannot change while the queue has live items.
 
-**Merge step.** Groups merge strictly in graph order, and within a batch the members merge in batch order. Four methods: `squash`, `merge_commit` and `rebase` merge the original PR through the GitHub API with the `sha` guard set to the head SHA recorded at admission (a 409 gives `pr_updated_at_merge_time`); `fast_forward`, allowed only with the `sequential` strategy, advances the target branch without force directly onto the tested commit, so that the commit that lands is exactly the one the CI saw, at the cost of a branch protection that allows the App to push and of a history made of merge commits; GitHub then marks the PR as merged by itself. If a member of a batch fails to merge, the members behind it in the same batch and all downstream groups restart, because their tests included the unmerged code. 5xx responses are retried 10 times over 60 s; a 405 "merge already in progress" is followed by a read of the PR and of the target branch, because the merge may have succeeded. The SHA of the merge commit is recorded as `merged_sha`, and the bot login is checked on incoming pushes, so that the merges of the queue are never taken for external changes. A `merge-commit-title: <title>` line in the body of the PR replaces the commit title for squash and merge commit.
+## End of run
 
-**Timeouts and ticks.** `not_ready_timeout_hours` (168 by default, reason `not_ready_timeout_expired`) cancels the items that never became mergeable; `testing_timeout_minutes` bounds a run. The reconciler also runs on a 30 s tick for each queue that has live items: it rereads the checks of a run in progress through the API when the run has been silent for 5 minutes, rereads the state of each live PR every 5 minutes (which catches up the lost `closed`, `synchronize` and merge events), and rechecks the mergeability of `not_ready` items with a progressive per-item delay of 1 to 15 minutes, in one GraphQL request grouped per repository. A check that concludes on the head of a `not_ready` item requests the read of its PR at once, so the progressive delay is only the fallback: a lost webhook thus only delays the queue, never blocks it.
+Code: `crates/mergequeue/src/assembly.rs` (`required_statuses`), `crates/mq-core/src/plan/rules/runs.rs`
+(`run_conclusion`)
+
+- **ALG-16** The required statuses come from the configuration file at `base_sha`, else from the rules of the
+  branch; never from the PR, so that a PR cannot weaken its own barrier. None at all fails the run.
+- **ALG-17** Names match exactly: a required name that never reports gives `test_run_timeout`, not a failure.
+- **ALG-18** A report on the test SHA of a run that is no longer live is stored and ignored.
+
+## Speculation window
+
+Code: `crates/mq-core/src/plan/rules/formation.rs` (`current_window`, `window_to`, `window_has_room`)
+
+- **ALG-19** The groups in test fit an adaptive window, as in Zuul: it starts at the floor, grows by 1 at each run
+  that passes outside bisection, and halves at each confirmed failure. A conflict, a configuration error or a
+  merge failure does not change it.
+- **ALG-20** A smaller window interrupts no run. A queue with flaky tests closes by itself and stops wasting CI.
+- **ALG-21** A batch takes one slot; bisection runs take slots from their own pool, `bisection_concurrency`.
+- **ALG-22** A throttled connection does not change the window: assembly jobs, class `speculate`, wait for the
+  budget (`specs/RELIABILITY.md`, REL-17).
+
+## Batching
+
+Code: `crates/mq-core/src/plan/rules/formation.rs` (`next_group`)
+
+- **ALG-23** A batch is the longest series of consecutive waiting items with the same lane and profile, not
+  `no_batch` and not blocked, up to `batching.size`.
+- **ALG-24** A batch starts when full, when its oldest member waited `batching.max_wait_minutes` since its
+  admission, or at once when the next item cannot join it.
+- **ALG-25** When a member leaves, the batch dissolves and the others restart with `batch_member_left`, because
+  their run tested its code. Each member merges as its own commit, in batch order.
+
+## Bisection
+
+Code: `crates/mq-core/src/plan/rules/bisection.rs` (`bisection`)
+
+- **ALG-26** A confirmed failure of a group of several PRs bisects it at once, without the failure budget. The
+  groups behind it restart, and no group forms on top of a PR in bisection until it ends.
+- **ALG-27** The halves (the first rounded up) are tested at the same time, the second on top of the first.
+- **ALG-28** When the first half passes, the second holds the failure: with `bisection_skip_redundant_tests` it is
+  split again without its own run. A half of one PR is still tested, because an inferred failure never evicts.
+
+## Pending failure and depth
+
+Code: `crates/mq-core/src/plan/rules/runs.rs` (`pending_failure`, `successors_testing`)
+
+- **ALG-29** A group whose run fails waits in `pending_failure` for each predecessor to end. If one failed, was
+  cancelled or changed, the group restarts on its new predecessors.
+- **ALG-30** When all predecessors merged, the group is the culprit, unless `pending_failure_depth` is `N > 0`: it
+  then also waits for the runs (not the end) of its first `N` successors that contain it, so that two groups
+  never wait for each other. The successors are evaluated again at each pass.
+
+## Failure budget
+
+Code: `crates/mq-core/src/plan/rules/runs.rs` (`pending_failure`)
+
+- **ALG-31** One failure never names a culprit: a group of one PR in culprit position restarts its run
+  `failure_budget.retries` times, then fails.
+- **ALG-32** A conflict or a configuration error at assembly fails at once, because it is never transient.
+
+## Optimistic merge
+
+Code: `crates/mq-core/src/plan/rules/runs.rs` (`optimistic`)
+
+- **ALG-33** With `optimistic_merging`, a run that passes proves the groups below it: those in `testing` become
+  `tests_passed` (`passed_by_optimization`), those in `pending_failure` too (`successor_test_run_passed`). A group
+  in bisection is not proved this way.
+- **ALG-34** When a predecessor is evicted, the groups behind it always restart: their tests contained code that
+  will not land.
+
+## Direct merge
+
+Code: `crates/mq-core/src/plan/rules/formation.rs` (`direct_merge`), `crates/mergequeue/src/merge.rs`
+(`direct_merge_possible`)
+
+- **ALG-35** With `direct_merge_mode: always`, the first `pending` item of a `running` queue with no live group gets
+  one merge attempt without a test branch; no group forms for it until the attempt answers.
+- **ALG-36** The job checks that the PR contains the head of the target, is mergeable and has green required
+  statuses; else the item takes the test path, without a failure. Only `fast_forward` refuses a target that moved
+  since the check.
+
+## External changes
+
+Code: `crates/mq-core/src/apply.rs` (`target_pushed`), `crates/mq-core/src/plan/rules/readiness.rs` (`validity`),
+`crates/mq-core/src/plan/rules/intake.rs` (`pr_changes`)
+
+- **ALG-37** A push on the target is the queue's own when the App sent it or its `after` is the `merged_sha` of a
+  queue merge of a `tests_passed` item or of the direct merge candidate, and its `before` is unknown or is the
+  known head: another `before` means that commits came in between. Any other push replaces the base of every run
+  (`manual_push_to_target_branch`).
+- **ALG-46** A late push changes nothing, and the tick reads the real head: its `after` is a former head, or its
+  `before` is a former head and its `after` a merge of the queue.
+- **ALG-47** A late push from outside (a former head as `before`, an `after` that the queue never saw) invalidates
+  the tested bases but keeps the head, since a later read of the real head would then be ignored as a past head.
+- **ALG-38** A PR merged outside the queue becomes `merged` (`manual_merge`); its dependents restart.
+- **ALG-39** A push on the PR head, a new base, a draft, a close or the removal of the entry label cancels the item.
+
+## Merge step
+
+Code: `crates/mergequeue/src/merge.rs` (`MERGE_PR`), `crates/mq-core/src/plan/rules/formation.rs` (`merge_ready`)
+
+- **ALG-40** Groups merge in graph order. `squash`, `merge_commit` and `rebase` use the `sha` guard at the head of
+  admission; `fast_forward` (`sequential` only) moves the target to the tested commit, which is what the CI saw.
+- **ALG-41** If a member of a batch fails to merge, the members behind it and all downstream groups restart.
+- **ALG-42** The job records the merge commit as `merged_sha`, which ALG-37 uses.
+
+## Reads and timeouts
+
+Code: `crates/mq-core/src/plan/reads.rs` (`READ_POINTS`, `CHECK_READ_EVERY`, `TARGET_READ_EVERY`, `wake_at`)
+
+- **ALG-43** A live PR is read at points from its submission, then every 15 minutes, or every minute while the SCM
+  has not computed its mergeability. The points depend on the age of the item, because a read that changes
+  nothing is not in the log.
+- **ALG-44** The checks of a run without a report are read every 10 minutes, the head of the target every 5 minutes
+  while the queue has work. A lost webhook delays the queue; it never blocks it.
+- **ALG-45** `not_ready_timeout_hours` cancels an item that never became ready; `testing_timeout_minutes` ends a run.

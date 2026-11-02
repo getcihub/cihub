@@ -40,8 +40,8 @@ The project of PostHog must enable cookieless mode in its settings, or it drops 
 - The title is the only H1; `src/lib/remark-drop-title.ts` drops any other. The headings go H2 then H3, and say
   their subject ("Protect the target branch", not "Overview").
 - A page answers one task, lists what it needs first, and gives complete commands to copy.
-- A text that the repository already holds is included, not copied: `<include>../../../../INSTALL.md</include>`. Its
-  links are absolute, so that they work on GitHub and here.
+- A text that the repository already holds is included with `<include>`, not copied. Its links are absolute, so
+  that they work on GitHub and here.
 - The colors come from `@cihub/theme`, the logo and the icons from `@cihub/icons` (`packages/ui/AGENTS.md`):
   `src/app/global.css` imports `tokens.css` and gives the tokens to the colors of Fumadocs; it does not import
   `tailwind.css`, whose scales would replace the ones that Fumadocs uses. The website does not use `@cihub/ui`.

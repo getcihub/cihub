@@ -17,7 +17,7 @@ done
 
 # A log message is the name of its event, `<object>.<action>` in snake_case,
 # never a sentence nor a format: the data go in the fields
-# (`specs/OBSERVABILITY.md`, rule 3). The Perl program prints each call of a
+# (`specs/OBSERVABILITY.md`, OBS-12). The Perl program prints each call of a
 # `tracing` macro whose last argument is not such a name.
 # shellcheck disable=SC2016 # a Perl program, which the shell must not expand
 log_messages='
@@ -54,5 +54,26 @@ while IFS= read -r up; do
     failed=1
   fi
 done < <([[ -n "$tag" ]] && git ls-tree --name-only "$tag" -- migrations/ | grep '\.up\.sql$')
+
+# A spec stays short enough for an agent to read it when it needs it: at most
+# 2500 words, lines of at most 120 characters (a table row is exempt, since it
+# cannot wrap), and each rule ID defined once, since the code cites them.
+# specs/LOTS.md leaves the repository with the planning in Linear.
+for spec in AGENTS.md specs/*.md; do
+  [[ "$spec" == specs/LOTS.md ]] && continue
+  words="$(wc -w < "$spec")"
+  if (( words > 2500 )); then
+    echo "$spec: $words words, more than 2500: replace what the code says by a pointer" >&2
+    failed=1
+  fi
+  while IFS= read -r line; do
+    echo "$spec:$line: a line of more than 120 characters" >&2
+    failed=1
+  done < <(awk 'length($0) > 120 && $0 !~ /^ *\|/ { print FNR }' "$spec")
+  while IFS= read -r id; do
+    echo "$spec: the rule $id is defined more than once" >&2
+    failed=1
+  done < <(grep -oE '^- \*\*[A-Z]+(-[A-Z]+)?-[0-9]+\*\*' "$spec" | sed 's/^- \*\*//; s/\*\*$//' | sort | uniq -d)
+done
 
 exit "$failed"

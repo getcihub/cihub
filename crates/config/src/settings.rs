@@ -130,7 +130,8 @@ fn pick<T: Clone>(
         })
 }
 
-/// The values that a strategy sets, as in the strategy table of the spec.
+/// The values that a strategy sets: a strategy is a table of default values,
+/// not code in the core (`specs/CONFIGURATION.md`, CFG-14).
 fn strategy_layer(strategy: Strategy) -> Layer {
     let (mode, floor, ceiling, batch_size, depth, optimistic) = match strategy {
         Strategy::Sequential => (QueueMode::Single, 1, 1, None, 0, false),

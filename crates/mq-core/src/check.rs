@@ -1,5 +1,5 @@
-//! `check`: the consistency rules of `specs/RELIABILITY.md`, on a snapshot
-//! after `plan`.
+//! `check`: the consistency rules of a snapshot after `plan`
+//! (`specs/RELIABILITY.md`, REL-29).
 
 use std::collections::BTreeMap;
 

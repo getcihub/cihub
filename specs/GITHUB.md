@@ -1,87 +1,197 @@
 # GitHub integration
 
-CIHub presents itself as a GitHub App (`cihub-io`) installed per organization, with an optional second App (`cihub-sudo`) that carries the branch protection bypass for direct-to-queue merges, so that the main App never needs administration rights. All authentication goes through installation tokens issued from the App's private key and cached until 5 minutes before expiry.
+This spec gives the rules of the GitHub App of CIHub: its permissions and events, its creation, the reads of a PR,
+the merge, what the queue writes on a PR, the commands, the rulesets, the sign-in and the onboarding. The calls
+are in `crates/github/src/` and the jobs that use them in `crates/platform/src/` and `crates/mergequeue/src/`.
 
-| Permission      | Level             | Usage                                                                                                                                 |
-| --------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Contents        | write             | create and delete the `cihub-temp/**` and `cihub-merge/**` refs, merges API, read the configuration file                              |
-| Pull requests   | write             | read the state and mergeability of PRs, open and close the test draft PRs, merge PRs, post and edit comments                          |
-| Commit statuses | write             | publish the `CIHub Merge Queue (<branch>)` status                                                                                     |
-| Checks          | read              | observe the check runs on the test SHAs                                                                                               |
-| Metadata        | read              | list the repositories                                                                                                                 |
-| Administration  | read              | read the branch protections and rulesets to derive the required checks and run the configuration checker                              |
-| Issues          | write             | labels on PRs (enqueue label, state labels), reactions on the command comments                                                        |
-| Members         | read              | map GitHub logins to organization roles: admin-only commands, roles of the dashboard                                                                       |
-| Actions         | read; write (optional) | receive `workflow_job`, which says when a runner takes a job; write cancels the workflows of superseded test branches and restarts only the failed jobs, check it by hand only for these actions |
+## The App
 
-Subscribed webhook events: `installation`, `installation_repositories`, `pull_request` (opened, synchronize, closed, reopened, edited, converted\_to\_draft, ready\_for\_review, labeled, unlabeled), `pull_request_review`, `issue_comment` (commands), `push` (target branches and PR heads), `check_run`, `check_suite`, `status`, `workflow_job` (in\_progress), `branch_protection_rule`, `repository` (renamed, deleted). GitHub sends no `check_run` when a check run goes from `queued` to `in_progress`: the `in_progress` action of `workflow_job` gives that change for a GitHub Actions job, as a check report with the name of the job, its `head_sha`, its `head_branch`, its `started_at` and its `html_url` as details URL; its other actions are ignored, as `check_run` already reports the creation and the end. An installation that has not accepted `actions: read` receives no `workflow_job`, and its checks show `queued` until they end. A CI that creates its own check runs shows `in_progress` only if it creates or updates its check run in that state. Each delivery is verified with the HMAC secret, deduplicated by `X-GitHub-Delivery` while it waits in the inbox, stored and acknowledged in under 2 s; processing is asynchronous and deletes the delivery.
+Code: `crates/github/src/client.rs` (`TOKEN_MARGIN`), `crates/github/src/apps.rs`
 
-Mergeability is read, never computed. The `refresh_prs` and `submit_pr` jobs ask GraphQL for `pullRequest.mergeable`, `mergeStateStatus` (`CLEAN`, `BLOCKED`, `BEHIND`, `DIRTY`, `DRAFT`, `UNSTABLE`, `HAS_HOOKS`, `UNKNOWN`), `reviewDecision`, `statusCheckRollup` (with the `status`, `startedAt` and `completedAt` of a check run, and the `createdAt` of a commit status), the `url`, the title and body of the PR (for the merge commit title), and for the `queue_conditions` `headRefName`, `isCrossRepository`, `createdAt`, `latestOpinionatedReviews` and `reviewRequests` (a user or a team `<org>/<team>`), in one request for up to 50 PRs per repository. The changed files (REST, 3,000 at most) and the unresolved review threads (GraphQL, the first 100) are read separately, only when a condition of the queue (`queue_conditions`) or a `priority_rules` condition uses them. The direct merge compares the head of the target and that of the PR through the *compare* API (`ahead` or `identical`). The adapter translates `mergeStateStatus` into `Mergeability`: `CLEAN`, `HAS_HOOKS` and `UNSTABLE` (a non-required check failed) give `mergeable` and admit the item, in line with the semantics of branch protections; `BEHIND` gives `behind`, `DIRTY` gives `conflict`, `BLOCKED` and `DRAFT` give `blocked`, `UNKNOWN` gives `unknown`. It also translates a check run into `CheckKind` `check`, a commit status into `status`; the `QUEUED`, `WAITING`, `REQUESTED` and `PENDING` statuses of a check run, and the `EXPECTED` state of a commit status, into `CheckStatus` `queued`, the `PENDING` state into `in_progress`; a conclusion of a check run that CIHub does not know (`STARTUP_FAILURE`), from GraphQL or from a webhook, into `failure`; and every `installation` delivery, whatever its action, into a change of the connection, after which CIHub reads the installation again. `unknown` schedules a re-read after a short delay, because GitHub computes this value lazily, and produces an `undetermined` block reason in the meantime; everything else keeps the item in `not_ready` with the `block_reasons[]` list rendered in the PR comment. For a `blocked` PR, `pr.observed` carries the checks that the branch rules require, and the reason names the required check that fails (`failing_required_check`) or has not concluded yet (`awaiting_required_check`, whose `status` is `missing` while the check has not reported, then `queued` or `running` after its `CheckStatus`); `undetermined` remains when no required check explains it. One exception is computed by these jobs: when the only unsatisfied required checks are contexts of CIHub for the queue itself, `CIHub Merge Queue (<branch>)` or `CIHub Conditions (<branch>)`, and no review is missing, the PR is reported `mergeable` and the item is admitted; otherwise a repository that requires the queue status could never enter the queue. The page of a PR (`Scm::pr_url`, `<web url>/<owner>/<repo>/pull/<number>`) and the page of the rules of a branch are built without a call. Re-checks are driven by events (reviews, check runs and statuses on the PR head, `synchronize`, pushes on the target that make PRs `BEHIND`), with the progressive polling of the tick as a safety net. A `check_run` or a `status` on the head of a `not_ready` item requests a `refresh_prs` of its queue at once when it has concluded (a completed check run, or a status other than `pending`), and nothing before: a CI with N checks gives up to N reads per push of a waiting PR. The polling alone keeps a repository with 50 waiting PRs under 300 GraphQL points per hour.
+- **GH-1** CIHub is one GitHub App, which the operator creates by hand. A call uses an installation token from the
+  private key of the App, or the token of a person; CIHub never needs to write the administration of a repository.
 
-The `merge_pr` job merges a PR with `PUT /pulls/{n}/merge` and the `sha` guard, the only merge endpoint of GitHub Enterprise Server. GitHub refuses a PR of a stack there with a 403 that names its asynchronous endpoint: the job then asks `PUT /pulls/{n}/merge-async` with `merge_action: direct_merge` and the same `sha`, method, title and message. `merged` gives the merge commit; `pending`, or a `409` for a request already pending, is `merge already in progress`, and the job asks again with its backoff; `failed` and `400` reject the merge. The job does not keep the identifier of the request: a request that failed in the background is asked again until the merge attempts end, then the item fails with `merge_already_in_progress`.
+| Permission      | Level                  | Usage                                                                  |
+| --------------- | ---------------------- | ---------------------------------------------------------------------- |
+| Contents        | write                  | create and delete the test refs, merge, read the configuration file    |
+| Pull requests   | write                  | read PRs and mergeability, open and close draft PRs, merge, comment    |
+| Commit statuses | write                  | publish the queue status and the conditions status                     |
+| Checks          | read                   | observe the check runs on the PR heads and the test SHAs               |
+| Metadata        | read                   | list the repositories                                                  |
+| Administration  | read                   | read the protections and rulesets: required checks and setup           |
+| Issues          | write                  | labels on PRs (submission, state), reactions on command comments       |
+| Members         | read                   | map GitHub logins to the roles of the dashboard                        |
+| Actions         | read; write (optional) | read: `workflow_job`; write: cancel old workflows, restart failed jobs |
 
-The queue writes three things on a submitted PR. A **commit status** named `CIHub Merge Queue (<target branch>)` on the PR head: `pending` while the item is `not_ready`, `pending`, `testing` or `pending_failure`, `success` from `tests_passed` on (set before the merge call, so that GitHub's required check rule is satisfied when the queue merges), `failure` on `failed` and `error` on `cancelled`, whose details URL is the page of the PR in the dashboard, `<http.public_url>/orgs/<org>/repos/<repo>/queues/<queue>/prs/<number>` (each segment percent-encoded), without `http.public_url` none, and none on the `success` that the merge job sets just before the merge. Teams can make it a required check so that nothing merges without a test verified by the queue; the push restriction ruleset described below is what really prevents a merge that bypasses the queue. One **bot comment** per PR, posted when the PR is opened out of draft on a managed branch, or at the next change of an open PR out of draft that has no comment of CIHub yet, such as a PR opened before its queue (the welcome comment, with a submission checkbox), or at submission, then edited in place at each state change, in English. It has no title: a state line (an icon, the state in bold, then the sentence of its reason, `Reason::describe`, or the position); for the members of a batch that waits for more PRs, when it closes, in UTC with the seconds dropped, never when its test starts (`Batch of 2 PRs: it waits for more PRs until 10:40 UTC, or until it has 3.`); then the block reasons, the failing checks, the predecessors and where the test runs: the draft PR of the run, or its test commit with `trigger: push` (both are links on GitHub), never the name of the test branch; then, with `http.public_url`, the link `Open in CIHub` to the page of the PR in the dashboard; then the history of the PR in the queue, folded in a `History (N)` block: one row per decision on its items, read from the log, with the time in UTC, the sentence of its reason and, in a `By` column, the login of the user whose request caused it, in a code span so that no one is mentioned; a row per test branch of the PR, with its draft PR and the PRs tested with it and before it, and the merged SHA on the `Merged` row; the last 20 rows, then the number of older rows; then the commands in small print: `/cihub restart` for an item under test, `/cihub cancel` for a live item, and for a finished item the submission checkbox with `/cihub merge`. The reconciliation writes the desired rendering in `pr_surfaces`, and the `publish_surfaces` job publishes it. Optional **state labels** `cihub:queued`, `cihub:testing`, `cihub:failed`, which keep being updated on a PR that already carries them even after the setting is disabled.
+## Events
 
-Each open PR on a branch with a queue also carries, from its opening until it closes, submitted or not, a second **commit status**, `CIHub Conditions (<target branch>)`: whether the PR would enter its queue now. The queue is the one of its base branch; the draft PR of a run is the queue's own and shows none. The status is `success` (`Ready for the queue`) when its `queue_conditions` pass and its mergeability admits it; `pending` when the only reasons are `undetermined` or `awaiting_required_check`, a `checks.success: <check>` condition counting as `awaiting_required_check` while its check has not concluded or has not reported yet (a job that waits for other jobs reports nothing before it starts), so that a running CI never shows red; `failure` otherwise, with the sentence of the first reason that is neither and the number of the others (`The required check `ci` failed, and 2 more`). The conditions never see the statuses of CIHub, so that a `checks.failure` condition cannot fail on the status that it writes. It has no details URL, as a PR not submitted has no page in the dashboard. It never says whether the PR passed a test of the queue: the queue status does, and a PR under test keeps a conditions status that says whether it would enter again. It must not be a required check, because a PR whose conditions pass would then merge outside the queue once its other required checks pass; `read_setup` reports it as `conditions_status_required`. The `observe_pr` job reads the PR with the GraphQL request of `refresh_prs` (up to 50 PRs per request, class `repair`, so that it never slows the queue) after each `PrChanged` of the PR, a concluded check on its head that is not a status of CIHub, a push on the target, and `…/sync`; a PR that a read still waits for asks no other read, as that read sees the change. `…/sync` asks `observe_open_prs`, which lists the open PRs of the target (`GET /pulls?state=open&base=<branch>`, 100 per page, 1,000 at most, class `repair`) and reads each one with those that show a status, so that a PR whose opening was lost, or that was open before CIHub watched its branch, gets its status; it evaluates the conditions with `cihub-conditions` and the reasons with `conditions_of` of `cihub-mq-core`, the same ones as for a `not_ready` item, and writes the status in `pr_conditions`, without an event: the log does not change. The `publish_conditions` job publishes it, in the class `repair` too; its key holds the read, so a status that comes back to an earlier value is published again. Without polling, a lost delivery leaves the status behind until the next event of the PR or `…/sync`. A PR that leaves the queue (closed, or on another base) loses its row, and its last status stays on its head; so does every PR when `status_check_enabled` turns to `false`, which turns off both statuses.
+Code: `crates/github/src/translate.rs` (`translate`), `crates/github/src/webhook.rs`
 
-Commands are read from the `issue_comment` events of PRs: `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch] [--profile=<name>]`, `/cihub cancel`, `/cihub restart`; no command from another product is accepted. The comment author must have the `write` permission on the repository, verified through the collaborators permission API and cached for 5 minutes. A comment does not give the base branch of the PR: it goes through the connection, and the `submit_pr` job verifies the permission, reads the PR, refuses it when it is merged, closed or a draft, then gives the submission to the queue of its base branch. The submission label (`enqueue_label`) submits the PR when a delivery says it was added; the job verifies that the PR still carries it. The checkbox of CIHub's comment also submits the PR: the adapter translates an `issue_comment.edited` where the `<!-- cihub:submit -->` checkbox goes from empty to checked, by an author other than the bot, and the submission follows the `/cihub merge` path (`write` permission of the author) if the comment is the one in `pr_comments`. `/cihub cancel` and `/cihub restart` go through the `pr_command` job, which finds the live item of the PR; `restart` only applies to an item under test. A refused command receives a comment that quotes it, mentions its author and says why: `@<login>, the queue refused this command: <cause>`. A command that its job accepts receives a `+1` reaction on its comment once the queue has it; a failed reaction is logged and does not fail the job.
+- **GH-2** The App subscribes to `pull_request`, `pull_request_review`, `issue_comment` (commands), `push`,
+  `check_run`, `status`, `workflow_job`, `branch_protection_rule` and `repository`. `installation` and
+  `installation_repositories` arrive without a subscription. Every other event is ignored.
+- **GH-3** GitHub sends no `check_run` when a check run goes from `queued` to `in_progress`: the `in_progress`
+  action of `workflow_job` gives that change for a GitHub Actions job. Without `actions: read`, a check shows
+  `queued` until it ends.
+- **GH-4** `POST /webhooks/github` verifies the HMAC signature, stores the delivery without routing it and answers
+  `202` in under 2 seconds. A delivery is deduplicated by `X-GitHub-Delivery` while it waits in the inbox
+  (principle V).
 
-Branch protection expectations, documented for customers: two rulesets on the target branch, one that restricts updates with the `cihub-io` App in the bypass list in **exempt** mode (GitHub's `always` mode does not cover branch updates by an App, and the configuration checker verifies it empirically with a no-op ref update), the other that carries the mergeability rules without any bypass; any other ruleset must exclude `cihub-temp/**/*` and `cihub-merge/**/*`; "require branches to be up to date" must be disabled, unless you rely on the direct merge on main. The job `read_setup` reads the rulesets of the target branch and of the test branches every hour and at a `…/sync` (about 5 REST points per queue and per hour, class `repair`), and keeps each of these points as a finding on the queue (and `read_repo_setup` the same points for the default branch of each repository, once a day and at a `…/repos/{repo}/sync`, in `repo_setups`), which `GET /api/v1/orgs/{org}/repos/{repo}/queues/{queue}` gives in `setup` without a call to GitHub (`update_restriction_missing`, `app_not_exempt`, `test_branches_not_excluded`, `up_to_date_required`, `conditions_status_required` when a rule of the target requires `CIHub Conditions (<branch>)`, and `target_branch_missing` when the target branch no longer exists, checked again each hour as the others); the no-op ref update awaits a decision, and the dashboard shows what fails on the page of the queue (Lot 10b).
+## Creating the App
 
-**Creating the App**. The operator creates the App by hand, in the GitHub settings of their organization (*Settings → Developer settings → GitHub Apps → New GitHub App*) or of their account:
+The operator creates the App in the GitHub settings of their organization (*Settings → Developer settings →
+GitHub Apps → New GitHub App*) or of their account:
 
 1. Any name, and homepage URL: the address of the instance.
-2. *Webhook* active, with the URL `<CIHub public address>/webhooks/github` and a random secret (for example `openssl rand -hex 32`).
+2. *Webhook* active, with the URL `<CIHub public address>/webhooks/github` and a random secret (for example
+   `openssl rand -hex 32`).
 3. The permissions of the table above, with `Actions: read`; `Actions: write` only to cancel and restart the CI.
-4. The events of the list above (`installation` and `installation_repositories` arrive without subscription).
-5. *Where can this GitHub App be installed?*: *Only on this account*, unless it serves several accounts. A self-hosted instance keeps its App private, so that only its owner can install it: any account that installs a public App gets an organization in CIHub.
+4. The events of GH-2.
+5. *Where can this GitHub App be installed?*: *Only on this account*, unless it serves several accounts. Any account
+   that installs a public App gets an organization in CIHub.
 6. After creation: note the *App ID* and generate a private key (`.pem` file).
 7. For the sign-in to the dashboard: the *Callback URL* `<CIHub public address>/auth/github/callback`, then note the
-   *Client ID* and generate a *client secret*. *Request user authorization (OAuth) during installation* stays off: on,
-   GitHub would send the person to the Callback URL and skip the Setup URL.
+   *Client ID* and generate a *client secret*. *Request user authorization (OAuth) during installation* stays off:
+   on, GitHub sends the person to the Callback URL and skips the Setup URL.
 8. The *Setup URL* `<CIHub public address>/auth/github/installed`, with *Redirect on update* checked: after an
    install or a change of its repositories, GitHub sends the person back to CIHub.
 
-The server then receives `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE` (or `CIHUB_GITHUB_PRIVATE_KEY`), `CIHUB_GITHUB_WEBHOOK_SECRET`, `CIHUB_GITHUB_CLIENT_ID` and `CIHUB_GITHUB_CLIENT_SECRET` (both or none: without them, nobody signs in to the dashboard, and the API tokens still work) and, for a GitHub Enterprise Server, `CIHUB_GITHUB_URL` (`specs/DEPLOYMENT.md`). These variables can also be the `github.*` keys of the configuration file. Without them, `cihub-server start` stops at startup with a message that names them. Finally, the operator installs the App on the repositories to serve (*Install App*): CIHub creates the organization by itself (see the onboarding below). An App that already exists is suitable, if its permissions, its events and its webhook URL are these.
+The server then receives the `CIHUB_GITHUB_*` variables (`specs/DEPLOYMENT.md`), and the operator installs the App
+on the repositories to serve. An App that already exists is suitable if its permissions, events and webhook URL
+are these. Without the client ID and secret, nobody signs in to the dashboard, and the API tokens still work.
 
-**Sign-in and roles.** A person signs in to the dashboard through the App (user authorization of a GitHub App,
-with PKCE `S256` and a `state`). `GET /auth/github` keeps the `state`, the verifier and the page to open after
-in the cookie `__Host-cihub_sign_in` (10 minutes), and sends the person to `GET <url>/login/oauth/authorize` with
-the `redirect_uri` `<http.public_url>/auth/github/callback` (GitHub shows no account picker to a GitHub App,
-`prompt=select_account` included: a person signs out of GitHub to use another account); the callback checks the `state`, then `POST
-<url>/login/oauth/access_token` with the client secret. Without `http.public_url` or the client of the App, and
-on any failure, the person comes back to `/sign-in?error=failed`. A person without an organization gets a session
-too: the dashboard asks them to install the App, whose page comes from `GET /app` (`html_url`, then
-`/installations/new`), read once. With the token of the person, CIHub reads `GET /user` (the login, the name and the avatar), every page of
-`GET /user/installations`, and, for each installation on an organization, `GET /user/memberships/orgs/{org}`: an
-active membership gives `admin` or `member`; on the account of a person, only its owner is `admin`; another kind
-of account gives no role. CIHub keeps the token, sealed (`specs/SECURITY.md`), and asks for the sync of the
-person (`sync_user`): with their token, it reads `GET /user/installations` and, for each one, every page of `GET
-/user/installations/{id}/repositories`, whose `permissions` give the permission of the person on each repository
-(`admin`; `maintain` or `push` give `write`; `triage` or `pull` give `read`), connects the installations that CIHub
-does not know, and replaces the rows of the person in `repo_permissions`. The sync runs at the sign-in, at `POST
-/user/sync`, at a request of the person more than an hour after the last one, and for the members of an organization
-whose connection finds new repositories. A request on a repository whose permission is older than an hour reads `GET
-/repos/{owner}/{repo}` with the token of the person (`404` for a repository that they do not see), and a request on
-an organization whose role is older than an hour reads `GET /user/memberships/orgs/{org}`. A token that ends is
-refreshed through `POST <url>/login/oauth/access_token` with `grant_type=refresh_token`; GitHub answers a used or
-revoked refresh token with an `error`, and a revoked token with `401`. The sign-in first connects, as a sync would, every installation that the person reaches and that CIHub does not
-know yet: `GET /user/installations` gives its account, its permissions and `suspended_at`, the fields that `GET
-/app/installations/{id}` gives, so it costs no other call; the new organization then reads its repositories
-(`sync_repos`). A suspended installation, or one whose slug another organization has, gives no organization. The
-*Setup URL*, `GET /auth/github/installed`, starts the sign-in again: its `installation_id` proves nothing, since
-anyone can write it, and only chooses the page to open once signed in, `/orgs/{org}?connecting=install` (or
-`update`) when the installation is an organization where the person has a role, `/welcome` otherwise. The sign-in deletes no membership: `/user/installations`
-lists only the installations that the person reaches through a repository, and GitHub can refuse the read of a
-membership (single sign-on not authorized, allow list of addresses); the hourly read decides who left. The check of a role older than an hour (`role_now`) reads `GET /app/installations/{id}` for the login of the account now, which a rename changes while `orgs.slug` stays, then `GET /user/memberships/orgs/{login}` with the token of the person: a `404` or a membership that is not `active` deletes the membership; a `403` is an error, so the request answers `503` and the membership stays. Every hour, the `sync_members` job
-of each connection reads `GET /app/installations/{id}` (the kind and the login of the account now) and every page
-of `GET /orgs/{org}/members?role=admin`, then `role=member`, with the token of the installation, and deletes the
-memberships that it no longer reads; the account of a person has its owner as its only member, and another kind
-of account has none. Each member gives its avatar, never its name: the name changes only at a sign-in. The same job then reads the profile of the account with the token of the installation, `GET /orgs/{org}` (`name`, `description`, `avatar_url`) or, for the account of a person, `GET /users/{username}` (`name`, `bio` as the description, `avatar_url`); another kind of account gives only the avatar of the installation. It copies them to `orgs` and sets `updated_at` only when one of them changes. A lost access or a missing installation requests the sync of the installation, as for
-`sync_repos`. These calls are
-written by hand from the documentation: the contract suite reads the members on the simulator only, until a new
-recording by the `github` example holds them.
+## Routing
 
-**Reception and routing.** `POST /webhooks/github` verifies the signature, stores the delivery without routing it and responds `202`. The routing loop of the `web` role translates the delivery into a neutral event (`ScmDelivery`), finds the connection by `installation.id`, and finds the queue only when a single one is certain: a PR by its base branch, a push by its branch. A check is routed to its queue by the name of its test branch, which carries the identifier of its run, or by its test SHA once the branch is deleted (`specs/CI.md`); a check from another branch goes to its connection only. A delivery of an installation that CIHub does not know, and an `installation` delivery, are deleted and ask for a sync of the installation. A `sweep_deliveries` job re-requests every 5 minutes the deliveries that GitHub tried to send with no attempt answered with a 2xx `status_code`: CIHub answers `202` only after it stores a delivery.
+Code: `crates/platform/src/routing.rs` (`find_route`), `crates/platform/src/sweep.rs` (`run_sweep`)
 
-**Onboarding**. Installing the App is enough. GitHub stays the source of truth about the installations; a webhook is only a signal to read them again. A sync of an installation reads `GET /app/installations/{id}` (its account, its permissions and `suspended_at`; a `404` is a deleted installation) and converges `scm_connections`: an installation that CIHub does not know becomes an organization whose slug is the login of the account, with its connection, and the `sync_repos` job reads its repositories and the `sync_members` job its members and its profile at once; when another organization already has this slug, the sync fails and creates nothing. An installation that CIHub does not know, on an account whose connection exists, is the App installed again (an uninstall then an install gives a new installation id): the connection keeps its organization and follows the new installation (its id and its permissions), `suspended_at` is cleared, the queues get `access.restored`, and the `sync_repos` job reads the repositories at once, under a key of the new installation rather than of the hour. A full sync that read the old installation before the uninstall and converges it after the reinstall points the connection back to it; the next call answers that the installation is not found, the connection is suspended, and the next delivery of the new installation or the next full sync reconnects it. A suspended or deleted installation sets `suspended_at` and gives `access.lost` to the queues of its connection, which pause; an installation active again clears it and gives `access.restored`. The full sync (`sync_installations`) reads every page of `GET /app/installations` when the server starts and every 24 hours. One installation is synced (`sync_installation`) at each `installation` delivery (`created`, `deleted`, `suspend`, `unsuspend`, `new_permissions_accepted`), at each delivery of an installation that CIHub does not know or whose last sync is older than 1 hour, and when the read of its repositories or of its members answers that the access is lost or the installation is not found. The `sync_repos` job then reads the repositories of the installation at each `installation_repositories` delivery and every hour. A repository is attached to each connection that lists it: when it moves to another installation, it gets a new row in the organization of that installation, whose first `/cihub merge` creates its queue; the old row and its queues stay in their organization with their history. A repository that its connection no longer lists gets `removed_at` and leaves the list of the repositories, and its queues get `access.lost` and pause; when it is listed again, `removed_at` is cleared and its queues get `access.restored`. The end of the suspension of a connection restores no queue of a repository that it no longer lists. The sync creates no API token: `cihub-server token create --org <slug>` creates one (`specs/DEPLOYMENT.md`). Each new account gets its own organization, and no queue is created by hand: the first `/cihub merge` on a branch creates its queue, with the `write` permission of the author of the command.
+- **GH-5** The router finds the queue of a delivery only when a single one is certain: a PR by its base branch, a
+  push by its branch, a check by the name of its test branch or by its test SHA (`specs/CI.md`). Any other
+  delivery goes to its connection only.
+- **GH-6** A delivery of an installation that CIHub does not know, and an `installation` delivery, ask for a sync
+  of the installation.
+- **GH-7** `sweep_deliveries` asks GitHub again for the deliveries that no attempt answered with a 2xx. CIHub
+  answers `202` only after it stores a delivery, so a lost delivery is a delay.
+
+## Reads of a PR
+
+Code: `crates/github/src/pulls.rs` (`read_prs`, `mergeability`), `crates/github/src/checks.rs` (`check_reports`)
+
+- **GH-8** Mergeability is read, never computed: one GraphQL request reads up to 50 PRs of a repository.
+  `UNSTABLE` and `HAS_HOOKS` admit the PR, as the branch protection of GitHub does.
+- **GH-9** `UNKNOWN` asks for a read again after a short delay, because GitHub computes the value lazily; the item
+  has the block reason `undetermined` in the meantime.
+- **GH-10** For a `blocked` PR, the reason names the required check that fails or has not concluded;
+  `undetermined` stays when no required check explains it.
+- **GH-11** When the only unsatisfied required checks are the statuses of CIHub for the queue itself and no review
+  is missing, the PR is `mergeable`. Otherwise a repository that requires the queue status could never enter the
+  queue.
+- **GH-12** Events drive the reads; the polling of the tick is a safety net. A check on the head of a `not_ready`
+  item asks a read only once it has concluded. The polling alone keeps a repository with 50 waiting PRs under 300
+  GraphQL points per hour (principle VII).
+
+## Merge
+
+Code: `crates/github/src/pulls.rs` (`merge_pr`, `merge_pr_async`)
+
+- **GH-13** `merge_pr` merges with `PUT /pulls/{n}/merge` and the `sha` guard, the only merge endpoint of GitHub
+  Enterprise Server. When GitHub refuses a PR of a stack with a `403` that names its asynchronous endpoint, the job
+  asks `merge-async` with the same `sha` and message. The job keeps no identifier of that request: a pending merge
+  is asked again until the merge attempts end, then the item fails with `merge_already_in_progress`.
+
+## What the queue writes on a PR
+
+Code: `crates/mergequeue/src/jobs/mod.rs` (`queue_status_context`, `conditions_status_context`),
+`crates/mergequeue/src/surfaces.rs` (`converge_surfaces`), `crates/mergequeue/src/wording.rs`,
+`crates/mergequeue/src/conditions_status.rs` (`observe`)
+
+- **GH-14** The reconciliation writes the desired rendering of a PR in `pr_surfaces`, and `publish_surfaces`
+  publishes it (principle III).
+- **GH-15** The queue status, `CIHub Merge Queue (<target branch>)` on the PR head, is `pending` while the item is
+  live and untested, `success` from `tests_passed` on, `failure` on `failed` and `error` on `cancelled`. The
+  `success` comes before the merge call, so that a rule that requires the status holds when the queue merges.
+- **GH-16** A team can require the queue status, so that nothing merges without a test of the queue; the ruleset
+  that restricts updates (GH-25) is what prevents a merge outside the queue.
+- **GH-17** CIHub writes one comment per PR, in English, and edits it in place at each change. It posts it when the
+  PR opens out of draft on a branch with a queue, at the next change of an open PR without one, or at the
+  submission.
+- **GH-18** The comment links where the test runs (the draft PR, or the test commit), never the test branch. For a
+  batch that waits, it gives when the batch closes, never when its test starts. It writes a login in a code span,
+  so that no one is mentioned.
+- **GH-19** State labels are optional. CIHub keeps them up to date on a PR that already carries one, even after the
+  setting is turned off.
+- **GH-20** Each open PR on a branch with a queue, submitted or not, carries the conditions status, `CIHub
+  Conditions (<target branch>)`: whether the PR would enter its queue now. It is `pending` when the only reasons
+  are `undetermined` or a check that has not concluded, so that a running CI never shows red. It never says
+  whether the PR passed a test of the queue: the queue status does.
+- **GH-21** The conditions never see the statuses of CIHub, so that a `checks.failure` condition cannot fail on the
+  status that CIHub writes.
+- **GH-22** The conditions status must not be a required check: a PR whose conditions pass would then merge outside
+  the queue. `read_setup` reports it as `conditions_status_required`.
+- **GH-23** The conditions status is read in the class `repair`, so that it never slows the queue, and written
+  without an event: the log does not change. There is no polling: a lost delivery leaves the status behind until
+  the next event of the PR or a `…/sync`.
+
+## Commands
+
+Code: `crates/mergequeue/src/command.rs`, `crates/mergequeue/src/jobs/submit_pr.rs`
+
+- **GH-24** A comment holds `/cihub merge`, `/cihub cancel` or `/cihub restart`; no command of another product is
+  accepted. The author needs the `write` permission on the repository. The submission label and the checkbox of
+  the comment of CIHub (checked by a person other than the bot) submit through the same path as `/cihub merge`.
+  A refused command gets a comment with its cause; an accepted one gets a `+1` reaction.
+
+## Rulesets and setup
+
+Code: `crates/scm/src/repo.rs` (`SetupFinding`), `crates/mergequeue/src/config.rs` (`read_setup`),
+`crates/mergequeue/src/repo_setup.rs` (`read_repo_setup`)
+
+- **GH-25** The target branch has two rulesets: one restricts updates, with the App in its bypass list in
+  **exempt** mode (the `always` mode does not cover the branch updates of an App); the other carries the rules of
+  mergeability, without a bypass.
+- **GH-26** Every other ruleset excludes `cihub-temp/**/*` and `cihub-merge/**/*`. "Require branches to be up to
+  date" stays off, unless the queue merges directly.
+- **GH-27** `read_setup` reads the setup of a queue every hour and at a `…/sync` (class `repair`, about 5 REST
+  points per queue and per hour): the four points of `SetupFinding` on the target branch,
+  `conditions_status_required`, and `target_branch_missing` when the branch is gone. A page reads it without a call.
+- **GH-28** `read_repo_setup` reads the setup of a repository at its discovery, once a day and at
+  `POST …/repos/{repo}/sync`: the four points of `SetupFinding` on the default branch, and the configuration file at
+  its head. It does not check `conditions_status_required`, and a default branch that is gone keeps no finding.
+
+## Sign-in and roles
+
+Code: `crates/github/src/people.rs`, `crates/web/src/sign_in.rs`, `crates/platform/src/persons.rs` (`role_now`),
+`crates/platform/src/members.rs` (`run_sync_members`)
+
+- **GH-29** A person signs in through the user authorization of the App, with PKCE `S256` and a `state`. GitHub
+  shows no account picker to a GitHub App: to use another account, a person signs out of GitHub.
+- **GH-30** An active membership of an organization gives `admin` or `member`; on the account of a person, only its
+  owner is `admin`; another kind of account gives no role.
+- **GH-31** A permission or a role older than an hour is read again in the request, with the token of the person,
+  never with the token of an installation (`specs/SECURITY.md`).
+- **GH-32** The `installation_id` of the Setup URL proves nothing, since anyone can write it: it only chooses the
+  page to open after the sign-in.
+- **GH-33** The sign-in deletes no membership, because `/user/installations` lists only the installations that the
+  person reaches through a repository, and GitHub can refuse the read of a membership (single sign-on, allow list
+  of addresses). The hourly `sync_members` decides who left.
+- **GH-34** When a role is read again in a request, a `404` or a membership that is not `active` deletes the
+  membership; a `403` is an error, so the request answers `503` and the membership stays.
+- **GH-35** A member gives its avatar, never its name: the name changes only at a sign-in.
+- **GH-36** The calls of the members are written from the documentation of GitHub: the contract suite reads them on
+  the simulator only, until a recording holds them.
+
+## Onboarding
+
+Code: `crates/platform/src/installations.rs` (`run_sync_installation`), `crates/platform/src/connections.rs`
+(`run_sync_repos`)
+
+- **GH-37** Installing the App is enough. GitHub is the source of truth of the installations; a webhook is only a
+  signal to read them again.
+- **GH-38** An installation that CIHub does not know becomes an organization whose slug is the login of the
+  account. When another organization has this slug, the sync fails and creates nothing.
+- **GH-39** A new installation on an account whose connection exists is the App installed again: the connection
+  keeps its organization and follows the new installation.
+- **GH-40** A suspended or deleted installation, or a repository that its connection no longer lists, gives
+  `access.lost` to its queues, which stop and keep their state; the return gives `access.restored`. The end of a
+  suspension restores no queue of a repository that the connection no longer lists.
+- **GH-41** A repository belongs to each connection that lists it. When it moves to another installation, it gets a
+  new row in the organization of that installation; the old row and its queues keep their history.

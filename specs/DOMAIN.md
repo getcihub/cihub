@@ -1,173 +1,68 @@
 # Domain model: the vocabulary contract
 
-This file defines the terms that we all use, humans and agents. The list of values of each closed
-vocabulary is in `cihub-domain`, with a `///` comment that gives the meaning of each value.
+This spec defines the terms that humans and agents use, and the rules of the vocabulary that the code does not
+say in one place. The values of each closed vocabulary, their meaning and the allowed transitions are in
+`cihub-domain`, with a `///` comment on each value; that code is the source of truth.
 
 ## Entities
 
-The vocabulary of the domain is that of CIHub, not that of an SCM: each adapter
-(`cihub-github`) translates the values of its SCM, and the core sees none of them. A **PR** designates any change
-request: a GitHub pull request, a GitLab merge request.
+Code: `crates/domain/src/` (`OrgId`, `ConnectionId`, `RepoId`, `Queue`, `Item`, `TestGroup`, `TestRun`,
+`CheckObservation`, `ImpactedTargets`, `Event`)
 
-Six entities carry the whole product: an organization installs the GitHub App on repositories, each repository has one
-queue per target branch, a queue contains items (one per PR submission), the items are grouped into
-test groups (a single PR or a batch) which own test runs, and each observed fact and each
-decision of the queue is recorded as an immutable event. Everything else (lanes, bisections, stacks) follows
-from it.
-
-| Entity               | Identity                     | Meaning                                                                                                                                       | Code (`cihub-domain`)  |
-| -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Organization         | `org_id`                     | Tenancy boundary: all the other tables carry `org_id`, except `users`                                                                         | `OrgId`                |
-| Connection           | `connection_id`              | The means by which CIHub reaches the repositories of an SCM account, named by `account_external_id` (`ConnectionKind`); carries the budget, the quotas and the degraded modes; kept in step with the installation of the App on the SCM | `ConnectionId`         |
-| Repository           | `repo_id`                    | A repository attached to a connection; a connection can cover several repositories                                                            | `RepoId`               |
-| Queue                | `queue_id`                   | A target branch of a repository, with a name unique within the repository, its state, its mode and its settings                               | `Queue`                |
-| Queue item           | `item_id`                    | A submission of a PR; a resubmission after cancellation creates a new item, and `is_current` designates the live item of that PR              | `Item`                 |
-| Test group           | `group_id`                   | The unit that is tested and held in pending failure: a single PR, a batch, or one half of a bisection                                         | `TestGroup`            |
-| Test run             | `run_id`                     | One attempt to test a group on a test branch; a group can have several runs (restarts)                                                        | `TestRun`              |
-| Check observation    | (`run_id`, name)             | The last observation of a check run or of a commit status on the test SHA                                                                     | `CheckObservation`     |
-| Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
-| Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
-
-Identifiers are typed ULIDs in the `typedid` text format. An SCM identifier is an
-`external_id`, unique within the deployment, which serves a single SCM. Each closed vocabulary is an
-enumeration whose text value (`snake_case`) is the same in the API, the webhooks, the analytics and Postgres.
-
-Outside the queue, `DeviceCodeState` says where a sign-in of the command line stands (`specs/API.md`): `pending`
-while the command line waits for the person, `approved` once the person approved its code, `denied` once they
-denied it. The command line takes its session from an `approved` code, which then ends.
+- **DOM-1** The vocabulary is that of CIHub, not that of an SCM: each adapter (`cihub-github`) translates the
+  values of its SCM, and the core sees none of them. A **PR** is any change request.
+- **DOM-2** An organization installs the App on repositories through a connection; a repository has one queue per
+  target branch; a queue contains items, one per submission of a PR; items form test groups (one PR, a batch, or
+  a half of a bisection), which own test runs. Lanes, bisections and stacks follow from these.
+- **DOM-3** A submission after a cancellation creates a new item; `is_current` names the live item of a PR.
+- **DOM-4** The organization is the tenancy boundary: every table carries `org_id` except `users`, `sessions` and
+  `device_codes`, which are global (`specs/DATA_MODEL.md`).
+- **DOM-5** Identifiers are typed ULIDs in the `typedid` text format. An SCM identifier is an `external_id`,
+  unique within the deployment. The text value (`snake_case`) of a closed vocabulary is the same in the API, the
+  webhooks, the analytics and Postgres.
 
 ## Log
 
-- **Log**: the append-only sequence of the events of a queue; it is the source of truth of the queue. The
-  state tables are projections of the log.
-- **Fact**: what GitHub, the CI or a user has established ("PR 12 has a new head SHA"). A fact
-  changes only the observed state.
-- **Decision**: what the queue chose ("the item of PR 12 moves to `cancelled`, reason `pr_pushed_to`").
-  A decision changes only the state of the queue and carries the identifier of the fact that caused it (`cause_id`).
-- **Request**: a fact that awaits a decision (submission, cancellation, restart, job result).
-- **`apply`**: the pure function that applies an event to the state; the replay uses only it.
-- **`plan`**: the pure function that reads the state and the time, and produces decisions and the desired state.
-- **Reason**: the readable cause of a transition, from a closed vocabulary. Each transition carries one.
-- **Actor**: who originated an event: an SCM user account (its identifier; the `users` table keeps the login), the App account, or CIHub.
+Code: `crates/domain/src/event.rs` (`Event`, `EventKind`, `EventType::is_decision`, `Actor`),
+`crates/mq-core/src/apply.rs` (`apply`), `crates/mq-core/src/snapshot.rs` (`Request`)
 
-Code: `Event`, `EventKind` (one payload per type), `EventType` (the `<subject>.<verb>` names, with
-`is_decision`), `Actor` and `ActorKind` in `cihub-domain`; `apply` in `cihub-mq-core`. A pending request
-is a `Request` of the snapshot.
+- **DOM-6** **Log**: the append-only sequence of the events of a queue, the source of truth of the queue. The state
+  tables are projections of the log.
+- **DOM-7** **Fact**: what GitHub, the CI or a user established ("PR 12 has a new head SHA"). A fact changes only
+  the observed state.
+- **DOM-8** **Decision**: what the queue chose ("the item of PR 12 moves to `cancelled`, reason `pr_pushed_to`").
+  A decision changes only the state of the queue and carries the fact that caused it (`cause_id`).
+- **DOM-9** **Request**: a fact that waits for a decision (submission, cancellation, restart, job result).
+- **DOM-10** **`apply`**: the pure function that applies an event to the state; the replay uses only it.
+  **`plan`**: the pure function that reads the state and the time, and gives decisions and the desired state.
+- **DOM-11** **Reason**: the cause of a transition, from a closed vocabulary; each transition carries one.
+  **Actor**: who caused an event: an SCM user account, the App account, or CIHub.
 
-## Queue item
+## Reasons and states
 
-States (`ItemState`): `not_ready`, `pending`, `testing`, `pending_failure`, `tests_passed`, `merged`, `failed`,
-`cancelled`. The last three are terminal. They are used as is in the API, the webhooks and the analytics.
+Code: `crates/domain/src/reason.rs` (`Reason`, `Reason::describe`), `crates/domain/src/transition.rs`
+(`Lifecycle`, `check_transition`), `crates/domain/src/item.rs` (`ItemState`, `BlockReason`, `Priority`),
+`crates/domain/src/pr.rs` (`Mergeability`, `PrState`)
 
-```mermaid
-stateDiagram-v2
-  [*] --> not_ready: submitted
-  [*] --> cancelled: submitted during draining or switching_modes
-  not_ready --> pending: mergeable, correct base, targets sent
-  pending --> testing: free slot, group formed
-  pending --> merged: direct merge on main
-  pending --> failed: direct merge failed
-  testing --> tests_passed: required checks green, or validated by optimization
-  testing --> pending_failure: one required check red or timeout, or a conflict in a group of several PRs
-  testing --> failed: conflict or config error at assembly
-  testing --> pending: restarted (upstream change, urgent preemption)
-  pending_failure --> pending: the predecessor was the culprit
-  pending_failure --> testing: failure budget restart
-  pending_failure --> tests_passed: released by a successor that passes
-  pending_failure --> failed: culpability confirmed
-  tests_passed --> merged: predecessors merged, PR merged
-  tests_passed --> pending: the upstream group changed shape
-  tests_passed --> failed: merge API failure, PR modified
-  not_ready --> cancelled
-  pending --> cancelled
-  testing --> cancelled
-  pending_failure --> cancelled
-  tests_passed --> cancelled
-  merged --> [*]
-  failed --> [*]
-  cancelled --> [*]
-```
+- **DOM-12** One `Reason` enumeration serves every state machine. For each one, a table gives the reasons that
+  each (start state, end state) allows.
+- **DOM-13** The reason code is the stable contract. Its sentence (`Reason::describe`) is a free rendering for a
+  person, which the PR, the API and the CLI show, and which can change without a decision.
+- **DOM-14** A `not_ready` item also carries block reasons: what prevents its admission.
+- **DOM-15** Only the priority value orders the queue; the names are shortcuts (`specs/ALGORITHMS.md`, ALG-6).
+- **DOM-19** The state of a queue (`QueueState`) is the choice of the admin and of a mode switch; the access to
+  the repository is apart. `access.lost` stops the queue whatever its state, which stays as it is, and
+  `access.restored` lets it go on in that state. A request of an operator without the access changes the state,
+  and the queue stays stopped until the access comes back.
 
-| State             | Meaning                                                                                       |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `not_ready`       | Submitted, but not yet admissible (review, PR checks, mergeability, missing targets)          |
-| `pending`         | Admitted, waiting for a place in the speculation window                                       |
-| `testing`         | Member of a group with a run in progress                                                      |
-| `pending_failure` | Its run failed; the queue waits to know whether the fault is its own or a predecessor's       |
-| `tests_passed`    | Validated by a run; waits for its predecessors to merge                                       |
-| `merged`          | Merged by the queue, by direct merge, or outside the queue                                    |
-| `failed`          | Removed from the queue with a reason; the PR must be resubmitted                              |
-| `cancelled`       | Cancelled by a user or by a change of the PR                                                  |
+## Groups, runs, checks and jobs
 
-The allowed transitions and their reasons are in the code: a single `Reason` enumeration and, for each
-state machine, a table (start state, end state) → allowed reasons, the
-`Lifecycle` trait and the `check_transition` function.
+Code: `crates/domain/src/group.rs` (`GroupState`), `crates/domain/src/run.rs` (`RunStatus`),
+`crates/domain/src/check.rs` (`CheckObservation::is_regressed_by`), `crates/domain/src/job.rs` (`JobError`)
 
-Families of reasons, to find one's way: admission and test; return to `pending` (upstream change, a member
-of the batch left with `batch_member_left`, restart, `urgent` preemption, bisection); `tests_passed`; `merged`;
-`cancelled`; `start_test_run_*` (failure at the assembly of the test branch); `test_run_*` (failure or timeout of the run); failure of the merge call
-(`merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`,
-`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons.
-
-Each reason has a sentence in English for a person, `Reason::describe` (for example `pr_pushed_to`: "the PR
-received a new commit after its submission"): the PR comment and status, the API (`state_description`) and the
-CLI show it instead of the code. The code is the stable contract; the sentence is a free rendering that can
-change without a decision.
-
-A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
-displayed in the PR comment. The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
-`conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
-`specs/GITHUB.md`. What CIHub reads from a PR: its state
-(`PrState`: `open`, `closed`, `merged`), its review decision (`ReviewDecision`) and its checks (`CheckReport`).
-
-Priority (`Priority`): a value from 0 to 255; the smallest goes first. The names `urgent` (0), `high`
-(10), `medium` (100) and `low` (200) are shortcuts. Only the value decides the order
-(`specs/ALGORITHMS.md`). Source of a submission: `SubmittedVia`.
-
-## Test group
-
-Nature of a group (`GroupKind`): `single` (one PR), `batch` (a batch), `bisection` (one half of a failed
-group of several PRs; `parent_group_id` names that group). A group has its own state, because a split or abandoned group has no items anymore, and the members
-of a batch move one by one to `merged`. States (`GroupState`): `testing`, `pending_failure`, `tests_passed`,
-`merged`, `failed`, `bisected`, `dissolved`; the last four are terminal. A `dissolved` group is
-abandoned by the queue (a member left, a predecessor or the base changed); its members that are still live
-return to `pending`. A group in bisection stays `pending_failure` with the PRs that wait for the result of
-its current half, and ends `bisected` when its PRs have all left to its halves. The consistency rule between the state of a group and that of its items is in
-`specs/RELIABILITY.md`.
-
-## Test run
-
-Statuses (`RunStatus`): `assembling`, `in_progress`, `succeeded`, `failed`, `interrupted`, `cancelled`,
-`timed_out`. The last five are terminal. `interrupted` means that the queue replaced the run (group
-abandoned, validated by optimization); `cancelled` means that a member of the group was cancelled.
-
-Nature of an observed check (`CheckKind`): `check` (a check with a run: GitHub check run, GitLab
-pipeline job) or `status` (a commit status). Progress (`CheckStatus`): `queued` (it waits for a
-runner, or a required status has not reported), `in_progress`, `completed` (it has a conclusion);
-a check gives when it started and completed, a commit status only the time of its state.
-A report does not take a check back to an earlier status (`queued`, then `in_progress`, then
-`completed`), unless it started after the end of that check, as a rerun does: GitHub does not order
-its deliveries, and a `queued` that arrives after the `in_progress`, or an `in_progress` after the
-`completed`, of the same execution is ignored (`CheckObservation::is_regressed_by`).
-Conclusion (`CheckConclusion`): the values of GitHub; `success`, `neutral` and `skipped` pass, the
-others fail the run. Culprit of a conflict at
-assembly (`ConflictCulprit`): what the group member conflicts with, a PR ahead of it in the
-queue (`queue_pr`) or the target branch alone (`base_branch`). Source of the required statuses
-(`RequiredStatusesSource`): `repo_config`, `branch_protection`. A job that fails reports an
-error (`JobError`), never a reason: `plan` chooses the reason. Class of a job (`JobClass`, by priority on the
-budget of its connection): `interactive`, `merge`, `speculate`, `repair`. State of a job (`JobState`): `queued`,
-`running`, `done`, `failed` (a new attempt would not fix the error), `dead` (all attempts
-failed; it waits for an operator).
-
-## Queue
-
-States (`QueueState`): `running` accepts and merges; `paused` decides nothing and merges nothing but keeps
-the order, and a submission there waits for the resume; `draining` lets what is in flight merge and
-refuses a new submission, whose item is created `cancelled` with the reason `queue_draining`;
-`switching_modes` is reached automatically when the mode changes with items in flight and behaves like
-`draining` (reason `queue_switching_modes`) until the queue is empty. The state is the choice of the admin and
-of the mode switch; the access is apart: `access.lost` stops the queue whatever its state, which stays as it is, and
-`access.restored` lets it go on in that state. An operator request without the access changes the state, and the
-queue stays stopped until the access comes back. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
-`resume`, `drain`. The settings of the queue are in `cihub-config`
-(`specs/CONFIGURATION.md`).
+- **DOM-16** A group has its own state, apart from that of its items, because a split or dissolved group has no
+  items left, and the members of a batch move to `merged` one by one.
+- **DOM-17** A check report never takes a check back to an earlier status, unless it started after the end of
+  that check, as a rerun does. GitHub does not order its deliveries: a late `queued` or `in_progress` of the same
+  execution is ignored.
+- **DOM-18** A job that fails reports an error (`JobError`), never a reason: `plan` chooses the reason.
