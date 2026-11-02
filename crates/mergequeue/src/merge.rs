@@ -44,6 +44,9 @@ struct MergePr {
     pub pr_number: u64,
     pub head_sha: String,
     pub tested_sha: String,
+    /// The head of the target on which the merge must land; `None` for a
+    /// direct merge.
+    pub expected_head: Option<String>,
 }
 
 /// The merge of `merge`, one job per item and run that proved it.
@@ -55,6 +58,7 @@ pub(crate) fn merge_job(target: &QueueTarget, merge: &Merge) -> Job {
         pr_number: merge.pr_number,
         head_sha: merge.head_sha.clone(),
         tested_sha: merge.tested_sha.clone(),
+        expected_head: merge.expected_head.clone(),
     };
     let subject = run_id.map_or_else(|| "direct".to_owned(), |run_id| run_id.to_string());
     let key = format!("{MERGE_PR}:{}-{subject}:1", merge.item_id);
@@ -114,7 +118,10 @@ fn after_error(
 
 fn log_merge_failure(fact: &EventKind, scm_error: Option<&str>) {
     if let EventKind::MergeFailed { error, .. } = fact
-        && *error != JobError::DirectMergeUnavailable
+        && !matches!(
+            error,
+            JobError::DirectMergeUnavailable | JobError::TargetMoved
+        )
     {
         warn!(error = error.as_str(), scm_error, "pr.not_merged");
     }
@@ -154,6 +161,11 @@ pub(crate) async fn merge_pr(
             }
         }
         Ok(Landed::AlreadyMerged) => failed(JobError::PrAlreadyMerged),
+        Ok(Landed::TargetMoved) => {
+            info!(reason = "target_moved", "merge.skipped");
+
+            failed(JobError::TargetMoved)
+        }
         Ok(Landed::Unavailable) => {
             info!(reason = "direct_merge_unavailable", "direct_merge.skipped");
 
@@ -179,6 +191,9 @@ enum Landed {
     AlreadyMerged,
     /// The direct merge cannot happen now.
     Unavailable,
+    /// The head of the target is not the one on which the run expects the
+    /// merge: nothing merged.
+    TargetMoved,
 }
 
 /// Reads the PR, then merges it with the method of the settings. A PR
@@ -227,6 +242,18 @@ async fn land(
     if settings.status_check_enabled.value {
         let status = merging_status(&target.target_branch, &request.head_sha);
         scm.set_status(&target.repo, &status, class).await?;
+    }
+
+    // A commit between the head of the run and the real head was never tested
+    // with the PR (`specs/tla/MergeGuard.tla`). The read comes last, so that
+    // the window until the merge stays short: the SCM cannot close it.
+    if let Some(expected) = &request.expected_head {
+        let head = scm
+            .branch_head(&target.repo, &target.target_branch, class)
+            .await?;
+        if head.as_deref() != Some(expected.as_str()) {
+            return Ok(Landed::TargetMoved);
+        }
     }
 
     match scm.merge_pr(&target.repo, &merge, class).await {
@@ -350,6 +377,7 @@ mod tests {
             pr_number: 1,
             head_sha: "head".into(),
             tested_sha: "test".into(),
+            expected_head: Some("target".into()),
         };
         let now = OffsetDateTime::UNIX_EPOCH;
         let error = |err, attempts| match after_error(&request, &err, attempts, now) {
@@ -402,6 +430,7 @@ mod tests {
             head_sha: "head".into(),
             run_id: Some(run_id),
             tested_sha: "test".into(),
+            expected_head: Some("target".into()),
         };
         let job = merge_job(&target, &merge);
 

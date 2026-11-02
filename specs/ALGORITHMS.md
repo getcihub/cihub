@@ -162,12 +162,22 @@ Code: `crates/mq-core/src/apply.rs` (`target_pushed`), `crates/mq-core/src/plan/
 
 ## Merge step
 
-Code: `crates/mergequeue/src/merge.rs` (`MERGE_PR`), `crates/mq-core/src/plan/rules/formation.rs` (`merge_ready`)
+Code: `crates/mergequeue/src/merge.rs` (`MERGE_PR`, `land`), `crates/mq-core/src/plan/rules/formation.rs`
+(`merge_ready`), `crates/mq-core/src/snapshot.rs` (`expected_head`)
 
 - **ALG-40** Groups merge in graph order. `squash`, `merge_commit` and `rebase` use the `sha` guard at the head of
   admission; `fast_forward` (`sequential` only) moves the target to the tested commit, which is what the CI saw.
 - **ALG-41** If a member of a batch fails to merge, the members behind it and all downstream groups restart.
 - **ALG-42** The job records the merge commit as `merged_sha`, which ALG-37 uses.
+- **ALG-48** The merge of a run must land on its expected head: the base of its group, then the merge of each
+  predecessor and of each member ahead, each recorded on the head before it (`merge_parents`). A merge recorded
+  on another head means that a commit came in between that the run did not test: the group restarts with
+  `manual_push_to_target_branch`.
+- **ALG-49** The job reads the real head right before the merge and merges nothing on another one
+  (`target_moved`). The snapshot then forgets the target (head, past heads, valid bases): every group restarts,
+  and the next read of the head counts, even of a head that it saw before. So a wrong view of the head costs a
+  run, never an untested merge (`specs/tla/MergeGuard.tla`). The SCM cannot close the window between that read
+  and the merge for `squash`, `merge_commit` and `rebase`.
 
 ## Reads and timeouts
 

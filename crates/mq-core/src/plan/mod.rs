@@ -107,6 +107,10 @@ pub struct Merge {
     /// merge, whose tested SHA is the head.
     pub run_id: Option<RunId>,
     pub tested_sha: String,
+    /// The head of the target on which the merge of a run must land; the job
+    /// merges nothing on another one. `None` for a direct merge, whose job
+    /// checks the head itself.
+    pub expected_head: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

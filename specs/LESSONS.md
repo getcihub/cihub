@@ -84,6 +84,10 @@ for a reason that the code cannot show; remove one when its reason no longer hol
 - **L-ALG-8** No `paused` state for a lost access: one state for two causes loses the choice of the admin (a
   pause undone by `access.restored`, a drain turned into `running`, a resume without the access). The state keeps
   the choice of the admin, and `is_access_lost` of the snapshot stops the queue apart from it.
+- **L-ALG-9** No safety from an exact view of the head: webhooks come late, out of order or never, and a push
+  whose `before` is unknown cannot be ordered without the history of the branch. A model with a head marked
+  uncertain until a read held, at the cost of a pause and of many restarts. The merge job checks the real head
+  instead (ALG-48, ALG-49), so that a wrong view costs a run only.
 
 ## Configuration
 

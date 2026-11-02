@@ -61,6 +61,11 @@ pub struct TargetBranch {
     pub recent_heads: VecDeque<String>,
     /// SHAs that merge jobs reported and that no push has shown yet.
     pub own_shas: BTreeSet<String>,
+    /// The head on which each merge of a run landed, by its `merged_sha`:
+    /// the merge job checked that head before it merged.
+    // A snapshot that a reconciliation wrote before this field has none.
+    #[serde(default)]
+    pub merge_parents: BTreeMap<String, String>,
 }
 
 /// A fact that waits for a decision.
@@ -240,6 +245,33 @@ impl Snapshot {
             .collect();
         items.sort_by_key(|i| i.position);
         items
+    }
+
+    /// The head on which the next merge of `group` must land, up to `member`:
+    /// its base, then the merge of each predecessor and of each member ahead
+    /// of `member`, in their order, each on the head before it. `None` when
+    /// one of them landed elsewhere: a commit came in between that the run did
+    /// not test (`specs/tla/MergeGuard.tla`).
+    pub fn expected_head(&self, group: &TestGroup, member: ItemId) -> Option<String> {
+        let ahead = group.item_ids.iter().take_while(|id| **id != member);
+        let mut head = group.base_sha.clone();
+
+        for id in group.predecessor_ids.iter().chain(ahead) {
+            let Some(merged_sha) = self
+                .items
+                .get(id)
+                .filter(|i| i.state == ItemState::Merged)
+                .and_then(|i| i.merged_sha.clone())
+            else {
+                break;
+            };
+            if self.target.merge_parents.get(&merged_sha) != Some(&head) {
+                return None;
+            }
+            head = merged_sha;
+        }
+
+        Some(head)
     }
 
     /// The item that a direct merge may merge: the first of the queue,

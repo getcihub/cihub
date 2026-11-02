@@ -9,6 +9,10 @@
 (* are those of `apply.rs` (`target_pushed`), `scheduler.rs` (`Pushed`),   *)
 (* `repair.rs` (`merge_in_flight`, `read_target`) and `merge.rs`.          *)
 (*                                                                         *)
+(* The merge job here merges on any head: its head check and the refusal  *)
+(* `target_moved` are in `MergeGuard.tla`, which proves that a wrong view  *)
+(* of the head costs a run, never an untested merge. This model checks the *)
+(* view itself: how often it is wrong, and how it comes back.              *)
 (* Not modeled: the groups and the runs (any valid base may hold a group), *)
 (* a webhook delivered twice, the limit of `RECENT_HEADS`, the retain of   *)
 (* the bases that no group uses.                                           *)
@@ -16,11 +20,11 @@
 \* The code that this model copies (scripts/tla-pins.sh): a change of it
 \* fails `mise run lint` until the model is read against it again.
 \* pin crates/mq-core/src/apply.rs fn target_pushed c558c6dec192
-\* pin crates/mq-core/src/apply.rs region merge-succeeded-is-own 1058d07a58e0
+\* pin crates/mq-core/src/apply.rs region merge-succeeded-is-own 9f057466ec8d
 \* pin crates/mergequeue/src/scheduler.rs region target-push-waits f97868dd49f3
 \* pin crates/mergequeue/src/repair.rs fn merge_in_flight 213da43850cc
 \* pin crates/mergequeue/src/repair.rs fn read_target 01942c4a4f55
-\* pin crates/mergequeue/src/merge.rs fn land f72d4ed4d799
+\* pin crates/mergequeue/src/merge.rs fn land d93fe7c677bc
 
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -275,9 +279,8 @@ OutsideIsNotLost ==
 \* merge from outside.
 NoSpuriousRestart == ~spurious
 
-(* A limit, not a rule: the merge job does not compare the real head with  *)
-(* the head of the run, so a merge that the queue asks before the webhook  *)
-(* of an outside push lands without that push. Expected violated.          *)
+(* What a merge job without its head check does: the merge lands on a     *)
+(* head that the run did not test. The code checks the head (`MergeGuard`). *)
 MergeLandsOnWhatWasTested == ~untested
 
 (* Witnesses: each must be violated, which proves that the model reaches
