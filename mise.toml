@@ -112,10 +112,19 @@ env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- migrate up"
 
 [tasks.dev]
-description = "Start Postgres and the profiles of COMPOSE_PROFILES, apply the migrations, then run cihub-server start with the four roles"
-depends = ["db:migrate"]
+description = "Start Postgres and the profiles of COMPOSE_PROFILES, then run server:watch and console:dev together: the console on http://localhost:5173 reloads at each change"
+# The tunnel of the profile `tunnel` reaches the console, which sends the API,
+# the sign-in and the webhooks to the server.
+env = { CIHUB_TUNNEL_URL = "http://host.docker.internal:5173" }
+run = ["docker compose up --detach", { tasks = ["server:watch", "console:dev"] }]
+
+[tasks."server:watch"]
+description = "Run cihub-server start on the development Postgres, after the migrations, and run both again at each change of the Rust code or of the migrations"
+depends = ["db:start"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = ["docker compose up --detach", "cargo run --quiet -p cihub-server -- start"]
+# Only this task needs watchexec: a tool of [tools] would install in every CI job.
+tools = { watchexec = "2.8.0" }
+run = "watchexec --restart --watch crates --watch migrations --watch Cargo.toml --watch Cargo.lock --exts rs,toml,sql,md -- 'cargo run --quiet -p cihub-server -- migrate up && cargo run --quiet -p cihub-server -- start'"
 
 [tasks."server:up"]
 description = "Build the image, then start Postgres, the migrations and cihub-server in compose.yaml (profile server), with the profiles of COMPOSE_PROFILES"

@@ -5,9 +5,19 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-// The development server sends the API and the sign-in to a local
-// `cihub-server start` (CIHUB_URL, http://localhost:8080 by default).
+// The development server sends the API, the sign-in and the webhooks to a
+// local `cihub-server start` (CIHUB_URL, http://localhost:8080 by default).
 const server = process.env.CIHUB_URL ?? "http://localhost:8080";
+
+// `mise run dev` sets CIHUB_TUNNEL_URL: the tunnel runs in a container, which
+// reaches Vite only on an interface other than loopback, and a person reaches
+// Vite at the public address of the instance. Vite then accepts that host, and
+// the page opens its reload socket on the port of that address.
+const isBehindTunnel = process.env.CIHUB_TUNNEL_URL !== undefined;
+const publicUrl =
+  isBehindTunnel && process.env.CIHUB_HTTP_PUBLIC_URL
+    ? new URL(process.env.CIHUB_HTTP_PUBLIC_URL)
+    : undefined;
 
 export default defineConfig({
   plugins: [
@@ -27,7 +37,11 @@ export default defineConfig({
     proxy: {
       "/api": server,
       "/auth": server,
+      "/webhooks": server,
     },
+    host: isBehindTunnel ? "0.0.0.0" : undefined,
+    allowedHosts: publicUrl ? [publicUrl.hostname] : [],
+    hmr: publicUrl?.protocol === "https:" ? { clientPort: 443 } : undefined,
   },
   test: {
     environment: "jsdom",

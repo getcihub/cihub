@@ -14,6 +14,10 @@ the files that it points to: the keys in `crates/server/src/config.rs`, the imag
 - **DEP-3** `compose.yaml` is for development only: its credentials are fixed and public. Production installs with
   the Helm chart. The local settings of a developer, such as the test App, go in `mise.local.toml`, which git
   ignores; a private key stays outside the repository and the file gives only its path.
+- **DEP-33** `mise run dev` runs the code on the machine, not in an image, so that a change applies in seconds:
+  Vite reloads the console in place, and `watchexec` applies the migrations and starts `cihub-server` again at
+  each change of the Rust code. The tunnel of the profile `tunnel` then reaches Vite, which sends `/api`, `/auth`
+  and `/webhooks` to the server, so that the sign-in and the console share one address.
 
 ## Configuration rules
 
@@ -84,7 +88,9 @@ Code: `crates/server/src/migrate.rs`, `crates/store/src/lib.rs` (`missing_migrat
 Code: `.github/workflows/ci.yaml`, `.github/workflows/image.yaml`, `.github/workflows/cli.yaml`,
 `.github/workflows/release-please.yaml`, `.renovaterc.json5`
 
-- **DEP-26** `mise install` installs every tool, pinned with its checksums in `mise.lock`.
+- **DEP-26** `mise install` installs every tool, pinned with its checksums in `mise.lock`. `watchexec` is a tool
+  of the `server:watch` task alone, which installs it at its first run, so that the jobs of the CI do not download
+  it.
 - **DEP-27** The CI jobs run in parallel; the last one, `Build Success`, is the required status of `main` and fails
   when another job failed or was cancelled.
 - **DEP-28** Every workflow runs on the runners hosted by GitHub, never on a self-hosted runner, because the
