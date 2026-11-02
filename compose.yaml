@@ -100,7 +100,8 @@ services:
     command: ["tunnel", "run"]
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
-      TUNNEL_URL: http://host.docker.internal:8080
+      # `mise run dev` points it at the console of Vite, in front of the server.
+      TUNNEL_URL: ${CIHUB_TUNNEL_URL:-http://host.docker.internal:8080}
       TUNNEL_METRICS: 127.0.0.1:2000
     extra_hosts:
       - host.docker.internal:host-gateway
