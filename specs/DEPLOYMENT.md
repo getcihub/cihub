@@ -59,7 +59,8 @@ Code: `helm/cihub/templates/`, `helm/cihub/README.md` (generated: the values)
 - **DEP-15** The migration runs as a Job with the `pre-install` and `pre-upgrade` hooks, before the new pods. It
   reads only the environment, because the ConfigMap does not exist yet when it runs.
 - **DEP-16** The ConfigMap carries `server.yaml` without its secrets; the secrets come from existing Secrets, as
-  variables or a mounted file (`specs/SECURITY.md`, SEC-22).
+  variables or a mounted file (`specs/SECURITY.md`, SEC-22). A Sentry DSN is public and stays in the ConfigMap
+  (`specs/OBSERVABILITY.md`, OBS-24).
 - **DEP-17** The pods mount no ServiceAccount token, because CIHub does not call the Kubernetes API.
 - **DEP-18** A proxy in front of the Service must not buffer the stream `/api/v1/orgs/{org}/stream` (CIHub sends
   `X-Accel-Buffering: no`) and must keep it open past the 15 seconds between two pings. It serves HTTP/2 to the

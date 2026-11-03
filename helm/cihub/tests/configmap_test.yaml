@@ -52,6 +52,34 @@ tests:
             log:
               filter: info
               format: json
+  - it: gives the Sentry servers when they are set
+    set:
+      sentry.dsn: https://server@sentry.example.com/1
+      sentry.browserDsn: https://browser@sentry.example.com/2
+      sentry.environment: production
+    asserts:
+      - equal:
+          path: data["server.yaml"]
+          value: |
+            database:
+              connection_timeout: 30
+              idle_timeout: 600
+              pool_size: 10
+            github:
+              app_id: "123456"
+              private_key_file: /etc/cihub/github/private-key.pem
+              url: https://github.com
+            http:
+              addr: 0.0.0.0:8080
+            internal:
+              addr: 0.0.0.0:8081
+            log:
+              filter: info
+              format: json
+            sentry:
+              browser_dsn: https://browser@sentry.example.com/2
+              dsn: https://server@sentry.example.com/1
+              environment: production
   - it: gives the number of proxies that append to the address of the client
     set:
       trustedProxyHops: 1

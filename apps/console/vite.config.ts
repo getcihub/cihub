@@ -33,6 +33,8 @@ export default defineConfig({
   ],
   // `@/` is `src/`: an import from another folder names where it comes from.
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  // The maps travel in the binary with the bundles: a Sentry server that reaches the instance reads them there.
+  build: { sourcemap: true },
   server: {
     proxy: {
       "/api": server,
