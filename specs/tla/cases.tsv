@@ -1,20 +1,20 @@
-# name	module	config	overrides	expected	issue
-queue	Queue	Queue	-	pass	-
-queue-urgent-first	Queue	Queue	Fault="urgent_first"	TestedIsWhatLands	-
-witness-urgent-during-merge	Queue	Queue	-	NoUrgentDuringMerge	-
-witness-all-merged	Queue	Queue	-	NotAllMerged	-
-target-head	TargetHead	TargetHead	-	pass	-
-target-head-inflight-jobs-only	TargetHead	TargetHead	Fault="inflight_jobs_only"	NoSpuriousRestart	-
-target-head-end-before-fact	TargetHead	TargetHead	Fault="end_before_fact"	NoSpuriousRestart	-
-target-head-own-without-before	TargetHead	TargetHead	Fault="own_without_before"	OutsideIsNotLost	-
-bug-target-head-read-before-merge-fact	TargetHead	TargetHead	MaxReads=1	NoSpuriousRestart	CIH-139
-bug-target-head-read-of-own-head	TargetHead	TargetHead	MaxReads=1;ReadChecksAgain=TRUE	OutsideIsNotLost	CIH-138
-bug-target-head-reversed-merge-webhooks	TargetHead	TargetHead	Merges={"m1", "m2"};Outside=FALSE	NoSpuriousRestart	CIH-140
-bug-target-head-head-moves-back	TargetHead	TargetHead	Merges={"m1", "m2"}	OutsideIsNotLost	CIH-137
-witness-target-head-outside-seen	TargetHead	TargetHead	-	OutsideNeverSeen	-
-witness-target-head-all-merged	TargetHead	TargetHead	-	NotAllMerged	-
-merge-guard	MergeGuard	MergeGuard	-	pass	-
-merge-guard-no-chain-check	MergeGuard	MergeGuard	Fault="no_chain_check"	MergeLandsOnWhatWasTested	-
-merge-guard-no-head-check	MergeGuard	MergeGuard	Fault="no_head_check"	MergeLandsOnWhatWasTested	-
-witness-merge-guard-all-merged	MergeGuard	MergeGuard	-	NotAllMerged	-
-witness-merge-guard-merged-after-outside	MergeGuard	MergeGuard	-	NeverMergedAfterOutside	-
+# name	module	config	overrides	expected	issue	impact
+queue	Queue	Queue	-	pass	-	-
+queue-urgent-first	Queue	Queue	Fault="urgent_first"	TestedIsWhatLands	-	-
+witness-urgent-during-merge	Queue	Queue	-	NoUrgentDuringMerge	-	-
+witness-all-merged	Queue	Queue	-	NotAllMerged	-	-
+target-head	TargetHead	TargetHead	-	pass	-	-
+target-head-inflight-jobs-only	TargetHead	TargetHead	Fault="inflight_jobs_only"	NoSpuriousRestart	-	-
+target-head-end-before-fact	TargetHead	TargetHead	Fault="end_before_fact"	NoSpuriousRestart	-	-
+target-head-own-without-before	TargetHead	TargetHead	Fault="own_without_before"	ViewOfTheHeadIsRight	-	-
+bug-target-head-read-before-merge-fact	TargetHead	TargetHead	MaxReads=1	NoSpuriousRestart	CIH-139	efficiency
+bug-target-head-read-of-own-head	TargetHead	TargetHead	MaxReads=1;ReadChecksAgain=TRUE	ViewOfTheHeadIsRight	CIH-138	efficiency
+bug-target-head-reversed-merge-webhooks	TargetHead	TargetHead	Merges={"m1", "m2"};Outside=FALSE	NoSpuriousRestart	CIH-140	efficiency
+bug-target-head-head-moves-back	TargetHead	TargetHead	Merges={"m1", "m2"}	ViewOfTheHeadIsRight	CIH-137	efficiency
+witness-target-head-outside-seen	TargetHead	TargetHead	-	OutsideNeverSeen	-	-
+witness-target-head-all-merged	TargetHead	TargetHead	-	NotAllMerged	-	-
+merge-guard	MergeGuard	MergeGuard	-	pass	-	-
+merge-guard-no-chain-check	MergeGuard	MergeGuard	Fault="no_chain_check"	MergeLandsOnWhatWasTested	-	-
+merge-guard-no-head-check	MergeGuard	MergeGuard	Fault="no_head_check"	MergeLandsOnWhatWasTested	-	-
+witness-merge-guard-all-merged	MergeGuard	MergeGuard	-	NotAllMerged	-	-
+witness-merge-guard-merged-after-outside	MergeGuard	MergeGuard	-	NeverMergedAfterOutside	-	-

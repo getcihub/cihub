@@ -14,8 +14,9 @@ task and `tla2tools.jar`, pinned by version and checksum in `scripts/tla-check.s
 ## Cases
 
 A row of `cases.tsv` is `name`, `module`, `config` (the base `.cfg` file), `overrides` (`-`, or the constants
-that the case sets, `Name=value` separated by `;`), `expected` and `issue` (the Linear issue of a `bug-` case,
-`-` for any other):
+that the case sets, `Name=value` separated by `;`), `expected`, `issue` (the Linear issue of a `bug-` case) and
+`impact` (`safety` when the bug can land untested code, `efficiency` when it costs runs); both are `-` for any
+other case:
 
 - `pass`: no invariant is violated and TLC enumerated every state.
 - An invariant name: the run must violate this invariant, and only this one. The script replaces the
@@ -33,9 +34,10 @@ Five kinds of rows, named by their prefix:
   model reaches the case; a witness that holds means that the checks of the fix are empty.
 
 The script prints `PASS` for a fix, a mutation caught or a witness reached, `BUG` for a known bug still there,
-with its issue, and `LIMIT` for a limit. A green run therefore does not
-mean that the code holds every invariant: read the `BUG` lines. A `bug-` case whose invariant now holds fails,
-so that a fix turns its case into a fix case.
+with its impact and its issue, and `LIMIT` for a limit. A green run therefore does not mean that the code holds
+every invariant: read the `BUG` lines, a `safety` one first. A `bug-` case whose invariant now holds fails, so
+that a fix turns its case into a fix case. The CI job `TLA+` runs `mise run tla:check`, and `Build Success`
+needs it.
 
 ## `Queue.tla`: the commit that lands is the one tested (principle IV)
 
@@ -71,7 +73,7 @@ reconciliation reads the facts, then each delivery, at different instants. The r
 Since the head check of the merge job (`MergeGuard.tla`), a wrong view of the head costs runs, never an untested
 merge: the invariants of this model measure the view, and its open bugs are bugs of efficiency.
 
-- `OutsideIsNotLost`: once the queue knows a head at or past the outside commit, no base before it stays valid.
+- `ViewOfTheHeadIsRight`: once the queue knows a head at or past the outside commit, no base before it stays valid.
 - `NoSpuriousRestart`: the push of a merge of the queue never removes a base that is still right. A spurious
   restart costs every run on that base, and a merge then reads as a merge from outside.
 

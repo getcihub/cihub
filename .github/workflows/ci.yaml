@@ -403,6 +403,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  tla:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: TLA+
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: --locked
+
+      - name: Check the TLA+ models
+        run: mise run tla:check
+
+      - name: Upload the logs of TLC
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tla
+          path: test-reports/tla/
+
   helm-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
@@ -488,6 +517,7 @@ jobs:
       - rust-cover
       - console-e2e
       - workflow-lint
+      - tla
       - helm-lint
       - helm-unittest
       - smoke
