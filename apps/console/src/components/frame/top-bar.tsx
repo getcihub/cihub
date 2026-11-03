@@ -6,7 +6,7 @@ import { Mark } from "@cihub/icons/brand/mark";
 /** The bar at the top of a page, with the logo of CIHub first. */
 export function TopBar({ children }: { children: ReactNode }) {
   return (
-    <header className="sticky top-0 z-10 flex h-13 items-center gap-1 border-b border-border bg-card px-page max-md:gap-0.5 max-md:px-3.5">
+    <header className="sticky top-0 z-10 flex h-13 items-center gap-1 border-b border-border bg-card px-page max-md:gap-0.5 max-md:px-3.5 [&:has(+[data-slot=page-band])]:border-transparent">
       {children}
     </header>
   );

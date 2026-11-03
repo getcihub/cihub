@@ -1,5 +1,5 @@
 import { Card, CardHeader } from "@cihub/ui/components/card";
-import { Page, PageHeader } from "@cihub/ui/components/page";
+import { Page, PageBand } from "@cihub/ui/components/page";
 import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
 
 /** The rows of the items while they load: the columns of `ItemTabs`. */
@@ -26,40 +26,47 @@ export function ItemRowsSkeleton({ count = 5 }: { count?: number }) {
   );
 }
 
-/** The page of a queue while it loads: its head, its counters, its settings, its graph and its items. */
+/** The page of a queue while it loads: its tabs and actions, its counters, its settings, its graph and its items. */
 export function QueueSkeleton() {
   return (
-    <Page>
-      <LoadingStatus />
-      <PageHeader>
-        <div className="grid gap-2">
-          <Skeleton className="w-22.5" />
-          <Skeleton className="h-6.5 w-45" />
+    <>
+      <PageBand className="h-9.75 pb-1.5 max-lg:h-auto max-lg:pb-0">
+        <div className="flex gap-5 max-lg:h-9.25 max-lg:items-center">
+          <Skeleton className="w-16" />
+          <Skeleton className="w-16" />
         </div>
-      </PageHeader>
-      <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
-        {[1, 2, 3, 4].map((stat) => (
-          <Card key={stat} className="grid gap-2.5 px-3.5 py-3">
-            <Skeleton className="h-2.25 w-20" />
-            <Skeleton className="h-7 w-12.5" />
-            <Skeleton className="h-2.25 w-30" />
-          </Card>
-        ))}
-      </div>
-      <Card className="h-15.5 p-4.5">
-        <Skeleton className="w-[60%]" />
-      </Card>
-      <Card>
-        <CardHeader>
-          <Skeleton className="w-22.5" />
-        </CardHeader>
-        <div className="h-40 p-4.5">
-          <Skeleton className="h-30" />
+        <div className="flex gap-2 max-lg:order-first">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-40" />
         </div>
-      </Card>
-      <Card>
-        <ItemRowsSkeleton />
-      </Card>
-    </Page>
+      </PageBand>
+      <Page>
+        <LoadingStatus />
+        <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
+          {[1, 2, 3, 4].map((stat) => (
+            <Card key={stat} className="grid gap-2.5 px-3.5 py-3">
+              <Skeleton className="h-2.25 w-20" />
+              <Skeleton className="h-7 w-12.5" />
+              <Skeleton className="h-2.25 w-30" />
+            </Card>
+          ))}
+        </div>
+        <Card className="h-15.5 p-4.5">
+          <Skeleton className="w-[60%]" />
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="w-22.5" />
+          </CardHeader>
+          <div className="h-40 p-4.5">
+            <Skeleton className="h-30" />
+          </div>
+        </Card>
+        <Card>
+          <ItemRowsSkeleton />
+        </Card>
+      </Page>
+    </>
   );
 }

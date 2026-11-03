@@ -10,7 +10,7 @@
   --breakpoint-md: 761px;
   --breakpoint-lg: 901px;
 
-  --container-page: 1360px;
+  --container-page: 1280px;
 
   --radius-xs: 3px;
   --radius-sm: 4px;
@@ -108,7 +108,7 @@
 
 /* The padding that aligns the top bar and its alerts with the content of a page (`Page`). */
 @utility px-page {
-  padding-inline: max(--spacing(6), calc((100% - var(--container-page)) / 2 + --spacing(6)));
+  padding-inline: max(--spacing(8), calc((100% - var(--container-page)) / 2 + --spacing(8)));
 }
 
 /* The light that runs over a skeleton while a page loads (Skeleton). */

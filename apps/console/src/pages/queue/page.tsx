@@ -46,9 +46,10 @@ export function QueuePage() {
 
   return (
     <>
-      <Page>
-        <QueueHead path={path} queue={queue} sent={sent} />
+      <QueueHead path={path} queue={queue} sent={sent}>
         <QueuePanes path={path} pane={pane} live={live.length} />
+      </QueueHead>
+      <Page>
         <Banners queue={queue} org={org} repo={repo} now={now} />
         {pane === "health" ? (
           <Suspense fallback={<HealthSkeleton />}>

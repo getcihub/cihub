@@ -21,6 +21,11 @@
     height: 100%;
   }
 
+  /* The space of the scrollbar stays, so that the content keeps its place from a short page to a long one. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     font-family: var(--font-sans);
     font-size: var(--text-lg);
