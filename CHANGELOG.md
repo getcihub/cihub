@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.6.0](https://github.com/getcihub/cihub/compare/v0.5.2...v0.6.0) (2026-11-03)
+
+
+### Features
+
+* **console:** inject Debug IDs into the bundles and publish the source maps ([#236](https://github.com/getcihub/cihub/issues/236)) ([7a25082](https://github.com/getcihub/cihub/commit/7a25082dda0e2a18901056c886f07f97e96ce9f9))
+* **console:** the navbar, the page width and the colors of the mockups v32 ([#216](https://github.com/getcihub/cihub/issues/216)) ([782fab1](https://github.com/getcihub/cihub/commit/782fab1b7b8d04b3e47b9b55d10d491f8013239d))
+* **dev:** reload the console and restart the server at each change ([#230](https://github.com/getcihub/cihub/issues/230)) ([7e7ef0e](https://github.com/getcihub/cihub/commit/7e7ef0e5837c5d253dd43954d9813bfd241d74bf))
+* **telemetry:** send the errors to an optional Sentry server ([#213](https://github.com/getcihub/cihub/issues/213)) ([70928e6](https://github.com/getcihub/cihub/commit/70928e6c3bfd14a8d3836e365648a3d315e9d0e3))
+* **website:** send the visits of the site and the documentation to PostHog ([#212](https://github.com/getcihub/cihub/issues/212)) ([cf9ed31](https://github.com/getcihub/cihub/commit/cf9ed310b695fe9a88beb304e29a75362c7e928f))
+
+
+### Bug Fixes
+
+* **cli:** truncate the lines of a watch to the width of the terminal ([1bf430a](https://github.com/getcihub/cihub/commit/1bf430aadc7e74edc88ca1de4d6ec23414ab20af))
+* **mq-core:** count a push as own only when its before is the head ([b16c271](https://github.com/getcihub/cihub/commit/b16c271b5c8badf7e9c603cd54676279f56f0f0a))
+* **mq-core:** keep an admin pause and a drain across a lost access ([8db6653](https://github.com/getcihub/cihub/commit/8db66539071a8d56cba60ad01c85d0742866e120))
+* **mq-core:** keep urgent behind a tested item and do not own an unplanned merge ([4106481](https://github.com/getcihub/cihub/commit/41064819cc00d8917b018d23da7760fac8893e64))
+* **mq-core:** merge a run only on the head that it tested (CIH-137) ([#232](https://github.com/getcihub/cihub/issues/232)) ([030134e](https://github.com/getcihub/cihub/commit/030134e8b5e7fc5c0c8e87c186c1f6bece9257c7))
+* **scm:** make the simulator fail as the adapter does ([#223](https://github.com/getcihub/cihub/issues/223)) ([ecd2f27](https://github.com/getcihub/cihub/commit/ecd2f277e676f2701e54bf031cfca350e0a52853))
+
+
+### Documentation
+
+* **specs:** keep the rules that the code cannot show, with stable IDs ([#228](https://github.com/getcihub/cihub/issues/228)) ([b7d52b4](https://github.com/getcihub/cihub/commit/b7d52b4790856f34d48d155ec421f0808294bb0c))
+
+
+### Tests
+
+* **tla:** check the queue with TLA+ models pinned to the code ([#231](https://github.com/getcihub/cihub/issues/231)) ([b9bef53](https://github.com/getcihub/cihub/commit/b9bef53f1155a567bb41e75c440542418c23d019))
+* **tla:** say the impact of each open bug, and check the models in the CI ([#235](https://github.com/getcihub/cihub/issues/235)) ([fbb3f81](https://github.com/getcihub/cihub/commit/fbb3f816e0e9d0d7419a2007359d914b0dce868d))
+
+
+### Build System
+
+* **image:** run on Debian 13 and pin each image by its tag and digest ([#229](https://github.com/getcihub/cihub/issues/229)) ([7a4f1c3](https://github.com/getcihub/cihub/commit/7a4f1c37633a7148a0876706918a092de10f5fc8))
+
+
+### Continuous Integration
+
+* **release-please:** exclude the website from the release ([ba134f0](https://github.com/getcihub/cihub/commit/ba134f0e1882e82809788f0027666d0336bcf5ab))
+
+
+### Miscellaneous Chores
+
+* **deps:** update dependency @playwright/test to v1.64.1 ([#198](https://github.com/getcihub/cihub/issues/198)) ([09b73ea](https://github.com/getcihub/cihub/commit/09b73ea85c7f3553b5663e7a3572d296653bd7ca))
+* **deps:** update dependency @testing-library/user-event to v14.6.8 ([#199](https://github.com/getcihub/cihub/issues/199)) ([3818c0e](https://github.com/getcihub/cihub/commit/3818c0ecbbf7f84e131406e4baf6399f84d6d817))
+* **deps:** update dependency jsdom to v30.1.3 ([d7ef39b](https://github.com/getcihub/cihub/commit/d7ef39bb617b02ccd2e19200c727023b6a4344af))
+* **deps:** update dependency postcss to v8.5.32 ([fcdd479](https://github.com/getcihub/cihub/commit/fcdd479b7f1feb3cd27dbe050a5c43753bc664e2))
+* **deps:** update dependency rust to v1.99.1 ([13da43b](https://github.com/getcihub/cihub/commit/13da43b3d1d2df84761d562deb69ffe3223905ad))
+* **deps:** update dependency vite to v8.3.5 ([906e64d](https://github.com/getcihub/cihub/commit/906e64dfee1371609038232d69e6840cfa57cb09))
+* **deps:** update dependency vitest to v5.0.5 ([dad4fe0](https://github.com/getcihub/cihub/commit/dad4fe04732498110c444bc5af3e370b2f3a8fe7))
+* **deps:** update grafana/alloy docker tag to v1.21.3 ([709c744](https://github.com/getcihub/cihub/commit/709c744959819d48a1fde9f55e2037a3b5177f5e))
+* **deps:** update prom/prometheus docker tag to v3.15.1 ([#233](https://github.com/getcihub/cihub/issues/233)) ([f602ba2](https://github.com/getcihub/cihub/commit/f602ba2a4fdf0e6996165502008b2fa08e9449cf))
+* **deps:** update rust crate globset to v0.4.21 ([#234](https://github.com/getcihub/cihub/issues/234)) ([88e5108](https://github.com/getcihub/cihub/commit/88e51084c91808dee73c4d1426dd84ce7e5e75d2))
+
 ## [0.5.2](https://github.com/getcihub/cihub/compare/v0.5.1...v0.5.2) (2026-10-31)
 
 
