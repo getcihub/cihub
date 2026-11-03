@@ -19,7 +19,9 @@ change: code, routes, clients, tests, specs. No alias, no fallback, no "legacy".
   anticipate the next lots. Its automated exit criterion defines "done". Update its status and its "Tracking" block in
   the same change as the code.
 - **Verify before saying "done".** `mise run check` (lint, then tests); `mise run rust:integration` when the change
-  touches Postgres or a job; `mise run rust:cover` for a pure crate. Show the output.
+  touches Postgres or a job; `mise run rust:cover` for a pure crate; `mise run tla:check` when the change touches code
+  that a model of `specs/tla` pins (`mise run lint` names it), after the model was read against the new code, then `mise
+  run tla:pin`. Show the output.
 - **Update the spec of the subject in the same change** (map below). When an approach fails or is rejected for a reason
   that the code cannot show, add it to `specs/LESSONS.md`; read it before you propose a change.
 - Everything in the repository is in English. Reply to a person in the language they write in.
@@ -75,8 +77,8 @@ rules has its own `AGENTS.md`.
 ## Commands
 
 `mise tasks` lists them; `mise install` installs every tool. A task is named `<domain>:<action>` (`rust:`, `console:`,
-`website:`, `packages:`, `pnpm:`, `db:`, `server:`, `helm:`, `workflows:`); only the tasks that span domains have no
-prefix. `mise run test:all` runs every suite, with Docker. Each suite writes its JUnit report into
+`website:`, `packages:`, `pnpm:`, `db:`, `server:`, `helm:`, `workflows:`, `tla:`); only the tasks that span domains
+have no prefix. `mise run test:all` runs every suite, with Docker. Each suite writes its JUnit report into
 `test-reports/<suite>/junit.xml`, which git ignores. In the CI, the last job, `Build Success`, is the required status.
 
 # Migrations
@@ -111,6 +113,7 @@ prefix. `mise run test:all` runs every suite, with Docker. Each suite writes its
 | `specs/ARCHITECTURE.md`                         | Before the first code change: the path of an event, roles, crates  |
 | `specs/DOMAIN.md`                               | States, transitions, reasons: the vocabulary                       |
 | `specs/ALGORITHMS.md`                           | The core and the reconciliation loop                               |
+| `specs/tla/README.md`                           | A rule of the queue that a TLA+ model checks, and its mutations    |
 | `specs/GITHUB.md`, `specs/CI.md`                | The GitHub App and webhooks; the contract with the users' CI       |
 | `specs/DATA_MODEL.md`                           | A migration, a query, RLS                                          |
 | `specs/CONFIGURATION.md`, `specs/API.md`        | A setting or a key of `.cihub.yaml`; a route, an error, a command  |

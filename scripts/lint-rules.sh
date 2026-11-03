@@ -59,7 +59,7 @@ done < <([[ -n "$tag" ]] && git ls-tree --name-only "$tag" -- migrations/ | grep
 # 2500 words, lines of at most 120 characters (a table row is exempt, since it
 # cannot wrap), and each rule ID defined once, since the code cites them.
 # specs/LOTS.md leaves the repository with the planning in Linear.
-for spec in AGENTS.md specs/*.md; do
+for spec in AGENTS.md specs/*.md specs/tla/*.md; do
   [[ "$spec" == specs/LOTS.md ]] && continue
   words="$(wc -w < "$spec")"
   if (( words > 2500 )); then
@@ -75,5 +75,8 @@ for spec in AGENTS.md specs/*.md; do
     failed=1
   done < <(grep -oE '^- \*\*[A-Z]+(-[A-Z]+)?-[0-9]+\*\*' "$spec" | sed 's/^- \*\*//; s/\*\*$//' | sort | uniq -d)
 done
+
+# A TLA+ model stays next to the code that it copies (specs/tla/README.md).
+scripts/tla-pins.sh check || failed=1
 
 exit "$failed"

@@ -88,9 +88,9 @@ Code: `crates/server/src/migrate.rs`, `crates/store/src/lib.rs` (`missing_migrat
 Code: `.github/workflows/ci.yaml`, `.github/workflows/image.yaml`, `.github/workflows/cli.yaml`,
 `.github/workflows/release-please.yaml`, `.renovaterc.json5`
 
-- **DEP-26** `mise install` installs every tool, pinned with its checksums in `mise.lock`. `watchexec` is a tool
-  of the `server:watch` task alone, which installs it at its first run, so that the jobs of the CI do not download
-  it.
+- **DEP-26** `mise install` installs every tool, pinned with its checksums in `mise.lock`. `java` is a tool of the
+  `tla:check` task alone and `watchexec` of the `server:watch` task alone: each installs at the first run of its
+  task, so that the jobs of the CI do not download them.
 - **DEP-27** The CI jobs run in parallel; the last one, `Build Success`, is the required status of `main` and fails
   when another job failed or was cancelled.
 - **DEP-28** Every workflow runs on the runners hosted by GitHub, never on a self-hosted runner, because the
