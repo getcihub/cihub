@@ -9,11 +9,11 @@ use super::people::encode_query;
 use super::pr::{NewPr, pr_page};
 use super::{Ctx, ScmMethod, Sim, bot};
 use crate::{
-    AppCalls, BranchMove, CommitStatus, ConnectionRef, DraftPr, MAX_OPEN_PRS, MAX_PRS_PER_READ,
-    MergeIntoRef, PersonCalls, PrMerge, PrSnapshot, RecentDelivery, RepoCalls, RepoRef,
-    RequiredChecks, ScmAccount, ScmAccountProfile, ScmError, ScmFuture, ScmInstallation, ScmMember,
-    ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmRepo, ScmUser, SetupFinding,
-    SignInCode, SignInRequest, SignedIn, StatusUpdate, code_challenge,
+    AppCalls, BranchMove, CommitStatus, ConnectionRef, DraftPr, MAX_CHECKS_PER_READ, MAX_OPEN_PRS,
+    MAX_PRS_PER_READ, MergeIntoRef, PersonCalls, PrMerge, PrSnapshot, RecentDelivery, RepoCalls,
+    RepoRef, RequiredChecks, ScmAccount, ScmAccountProfile, ScmError, ScmFuture, ScmInstallation,
+    ScmMember, ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmRepo, ScmUser,
+    SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate, code_challenge,
 };
 
 impl RepoCalls for Sim {
@@ -72,7 +72,10 @@ impl RepoCalls for Sim {
         class: JobClass,
     ) -> ScmFuture<'a, Vec<CheckReport>> {
         self.call_on_repo(ScmMethod::Checks, repo, class, |ctx| {
-            Ok(ctx.repo.checks.get(sha).cloned().unwrap_or_default())
+            let mut reports = ctx.repo.checks.get(sha).cloned().unwrap_or_default();
+            reports.truncate(MAX_CHECKS_PER_READ);
+
+            Ok(reports)
         })
     }
 
@@ -246,14 +249,18 @@ impl RepoCalls for Sim {
                 return Err(ScmError::HeadChanged);
             }
 
-            match ctx.repo.mergeability(pr, &head)? {
-                Mergeability::Mergeable => {}
-                Mergeability::Behind => {
-                    return Err(ScmError::MergeRejected(
-                        "the head must be up to date".into(),
-                    ));
+            // A fast forward moves the branch to the tested commit and never reads
+            // the mergeability of the PR, as the adapter does not.
+            if merge.method != MergeMethod::FastForward {
+                match ctx.repo.mergeability(pr, &head)? {
+                    Mergeability::Mergeable => {}
+                    Mergeability::Behind => {
+                        return Err(ScmError::MergeRejected(
+                            "the head must be up to date".into(),
+                        ));
+                    }
+                    other => return Err(ScmError::MergeRejected(format!("PR {other}"))),
                 }
-                other => return Err(ScmError::MergeRejected(format!("PR {other}"))),
             }
 
             let base = pr.base_branch.clone();

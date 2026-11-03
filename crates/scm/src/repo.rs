@@ -11,6 +11,10 @@ use crate::{RepoRef, ScmError, ScmFuture, ScmUser};
 /// A read of PRs asks for this many PRs at most.
 pub const MAX_PRS_PER_READ: usize = 50;
 
+/// A read of the checks of a commit gives this many checks at most; the others
+/// are not read.
+pub const MAX_CHECKS_PER_READ: usize = 100;
+
 /// A list of the open PRs of a branch gives this many PRs at most.
 pub const MAX_OPEN_PRS: usize = 1_000;
 

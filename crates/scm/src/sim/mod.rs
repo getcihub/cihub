@@ -28,6 +28,7 @@ pub use pr::{PrChange, Reviews, UpdateRestriction};
 pub use world::contract_world;
 
 use deliveries::Attempt;
+use faults::{Failure, QueuedFault};
 use git::Commit;
 use pr::{Comment, Pr};
 
@@ -76,7 +77,7 @@ struct State {
     /// The person of each refresh token not used yet, by refresh token.
     refresh_tokens: BTreeMap<String, String>,
     next_person_token: u64,
-    faults: VecDeque<Fault>,
+    faults: VecDeque<QueuedFault>,
     random: Option<RandomFaults>,
     calls: Vec<SimCall>,
     deliveries: Vec<ScmDelivery>,
@@ -176,6 +177,16 @@ impl Sim {
         });
     }
 
+    /// Renames the repository `repo_external_id`, as its owner does: the
+    /// calls that name it by its old path find nothing.
+    pub fn rename_repo(&self, repo_external_id: &str, name: &str) {
+        self.with(|state| {
+            if let Some(repo) = state.repos.get_mut(repo_external_id) {
+                name.clone_into(&mut repo.name);
+            }
+        });
+    }
+
     /// The head of the branch `branch`, without a call to count.
     pub fn branch(&self, repo: &RepoRef, branch: &str) -> Option<String> {
         self.with(|state| {
@@ -199,7 +210,8 @@ impl Sim {
         self.with(|state| state.ctx(repo).and_then(|mut ctx| run(&mut ctx)))
     }
 
-    /// A call: it is recorded, and can fail.
+    /// A call: it is recorded, and can fail before its effect, or after it when
+    /// its answer is lost.
     fn call<T: Send + 'static>(
         &self,
         method: ScmMethod,
@@ -209,7 +221,12 @@ impl Sim {
         let result = self.with(|state| {
             state.calls.push(SimCall { method, class });
             match state.take_fault(method) {
-                Some(error) => Err(error),
+                Some(Failure {
+                    error,
+                    is_answer_lost: false,
+                }) => Err(error),
+                // The effect lands; only a failed effect shows its own error.
+                Some(Failure { error, .. }) => run(state).and_then(|_| Err(error)),
                 None => run(state),
             }
         });
@@ -217,7 +234,9 @@ impl Sim {
     }
 
     /// A call on `repo`: it is recorded, can fail, and fails with
-    /// `AccessLost` when the connection of `repo` is suspended.
+    /// `AccessLost` when the connection of `repo` is suspended. It finds the
+    /// repository by its path, as the adapter does, so a stale name is
+    /// `NotFound`.
     fn call_on_repo<T: Send + 'static>(
         &self,
         method: ScmMethod,
@@ -227,9 +246,9 @@ impl Sim {
     ) -> ScmFuture<'_, T> {
         self.call(method, class, |state| {
             state.check_access(&repo.connection.external_id)?;
-            state
-                .ctx(&repo.external_id)
-                .and_then(|mut ctx| run(&mut ctx))
+            let external_id = state.repo_at(&repo.owner, &repo.name)?;
+
+            state.ctx(&external_id).and_then(|mut ctx| run(&mut ctx))
         })
     }
 }
@@ -241,6 +260,14 @@ impl State {
         }
 
         Ok(())
+    }
+
+    fn repo_at(&self, owner: &str, name: &str) -> Result<String, ScmError> {
+        self.repos
+            .iter()
+            .find(|(_, repo)| repo.owner == owner && repo.name == name)
+            .map(|(external_id, _)| external_id.clone())
+            .ok_or_else(|| ScmError::NotFound(format!("repository {owner}/{name}")))
     }
 
     fn ctx(&mut self, repo: &str) -> Result<Ctx<'_>, ScmError> {
