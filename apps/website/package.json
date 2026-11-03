@@ -16,7 +16,7 @@
     "@cihub/icons": "workspace:*",
     "@cihub/theme": "workspace:*",
     "fumadocs-core": "16.17.7",
-    "fumadocs-mdx": "15.4.8",
+    "fumadocs-mdx": "15.4.10",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.7",
     "next": "16.4.2",
     "posthog-js": "1.444.0",
