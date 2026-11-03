@@ -83,9 +83,12 @@ Code: `crates/telemetry/src/error_reports.rs`, `crates/web/src/dashboard.rs` (`I
   them before its first render.
 - **OBS-25** The release is `cihub@<version>` for the server and the dashboard; `sentry.environment` is optional
   and common to both.
-- **OBS-26** The instance serves the source maps of the console next to its bundles, because the release CI cannot
-  upload them to the Sentry server of an operator. A Sentry server that cannot reach the instance gets minified
-  frames.
+- **OBS-26** The console build injects a Debug ID into each bundle and its source map (`sentry-cli sourcemaps inject`,
+  offline), and the SDK sends it with each frame. The instance also serves the maps next to its bundles; a Sentry
+  server that can reach the instance needs nothing else. One that cannot gets minified frames until it has the maps.
+- **OBS-27** Each release attaches `console-sourcemaps.tar.gz` (the bundles and their maps) to its GitHub release,
+  because the release CI cannot upload to the Sentry server of an operator. An operator of a private instance runs
+  `sentry-cli sourcemaps upload` on the unpacked archive, once per version. The Debug IDs match any URL.
 
 ## Not built yet
 
