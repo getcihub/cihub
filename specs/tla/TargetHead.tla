@@ -271,7 +271,7 @@ TypeOK ==
 
 \* Once the queue knows a head at or past the outside commit, no base before
 \* it stays valid: a run on that base would land without it (CIH-5).
-OutsideIsNotLost ==
+ViewOfTheHeadIsRight ==
     (X \in Range(main) /\ \E s \in seen : Pos(s) >= Pos(X)) => \A b \in k.valid : IsRight(b)
 
 \* The push of a merge of the queue never restarts the runs on a right base

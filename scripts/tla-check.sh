@@ -104,20 +104,22 @@ rm -rf "$logs"
 mkdir -p "$logs"
 
 # A malformed row or a name used twice must not skip a case or overwrite the
-# log of another; a known bug names its issue, and only a known bug does.
+# log of another; a known bug names its issue and its impact (`safety` or
+# `efficiency`), and only a known bug does.
 awk -F '\t' '
   /^#/ || NF == 0 { next }
-  NF != 6 || seen[$1]++ { print "specs/tla/cases.tsv:" NR ": a malformed or duplicate case" > "/dev/stderr"; exit 1 }
+  NF != 7 || seen[$1]++ { print "specs/tla/cases.tsv:" NR ": a malformed or duplicate case" > "/dev/stderr"; exit 1 }
   ($1 ~ /^bug-/) != ($6 != "-") { print "specs/tla/cases.tsv:" NR ": every bug- case names its issue, and only a bug- case does" > "/dev/stderr"; exit 1 }
+  ($1 ~ /^bug-/) ? ($7 != "safety" && $7 != "efficiency") : ($7 != "-") { print "specs/tla/cases.tsv:" NR ": a bug- case has the impact safety or efficiency, any other case -" > "/dev/stderr"; exit 1 }
   { count++ }
   END { if (count == 0) exit 1 }
 ' specs/tla/cases.tsv
 
 # What a verdict that matches its expectation means, by the kind of the case.
 outcome_of() {
-  local name="$1" expected="$2" issue="$3"
+  local name="$1" expected="$2" issue="$3" impact="$4"
   case "$name" in
-    bug-*) echo "BUG   $name (still violates $expected, $issue)" ;;
+    bug-*) echo "BUG   $name ($impact: still violates $expected, $issue)" ;;
     limit-*) echo "LIMIT $name (accepted: violates $expected)" ;;
     witness-*) echo "PASS  $name (case reached: $expected)" ;;
     *) if [[ "$expected" == pass ]]; then
@@ -129,7 +131,7 @@ outcome_of() {
 }
 
 failed=0
-while IFS=$'\t' read -r name module config overrides expected issue; do
+while IFS=$'\t' read -r name module config overrides expected issue impact; do
   [[ -z "$name" || "$name" == \#* ]] && continue
 
   cfg="$logs/$name.cfg"
@@ -142,7 +144,7 @@ while IFS=$'\t' read -r name module config overrides expected issue; do
   rm -rf "$states"
 
   if verdict_is "$expected" "$status" "$log"; then
-    outcome_of "$name" "$expected" "$issue"
+    outcome_of "$name" "$expected" "$issue" "$impact"
   elif [[ "$name" == bug-* && "$status" == 0 ]]; then
     echo "FAIL  $name: $expected holds now; if $issue is fixed, make this case a fix case" >&2
     failed=1
