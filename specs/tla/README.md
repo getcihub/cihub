@@ -68,6 +68,9 @@ reconciliation reads the facts, then each delivery, at different instants. The r
 `merge.rs`. Not modeled: the groups (any valid base may hold one), a webhook delivered twice, the limit of
 `RECENT_HEADS`, the retain of the bases that no group uses.
 
+Since the head check of the merge job (`MergeGuard.tla`), a wrong view of the head costs runs, never an untested
+merge: the invariants of this model measure the view, and its open bugs are bugs of efficiency.
+
 - `OutsideIsNotLost`: once the queue knows a head at or past the outside commit, no base before it stays valid.
 - `NoSpuriousRestart`: the push of a merge of the queue never removes a base that is still right. A spurious
   restart costs every run on that base, and a merge then reads as a merge from outside.
@@ -81,7 +84,6 @@ reconciliation reads the facts, then each delivery, at different instants. The r
 | `bug-target-head-read-of-own-head`               | see "Open bugs", 2                                                  |
 | `bug-target-head-reversed-merge-webhooks`        | see "Open bugs", 3                                                  |
 | `bug-target-head-head-moves-back`                | see "Open bugs", 4                                                  |
-| `limit-target-head-merge-before-outside-webhook` | see "Limit"                                                         |
 | `witness-target-head-outside-seen`               | the queue learns the outside push                                   |
 | `witness-target-head-all-merged`                 | every merge lands                                                   |
 
@@ -100,21 +102,33 @@ Each trace was replayed on the real `apply` of `cihub-mq-core`; each issue holds
    in flight; TLC finds no spurious restart then (`MaxReads=1;ReadChecksAgain=TRUE`, `NoSpuriousRestart`).
 2. **A read of an own head keeps a base that an outside commit made wrong** (CIH-138). A read has no `before`: when its
    `after` is a known merge, `target_pushed` counts it as own and keeps the old bases, even when an outside
-   commit landed before the merge. When the webhook of that commit is lost, the repair loop does not catch it.
+   commit landed before the merge. When the webhook of that commit is lost, the repair loop does not catch it;
+   the head check of the next merge does, and that run restarts.
 3. **The webhooks of two merges in reverse order restart the runs** (CIH-140). `m1` then `m2` land; the webhook of `m2`
    (`before: m1`) arrives first. Its `before` is not the known head, so the push is not own, and every base is
    removed, though the commits in between are the queue's own.
 4. **A late webhook of a merge moves the head back** (CIH-137). `m1`, `m2`, then an outside `x` land; the webhook of `x`
    arrives, then the one of `m2` (`before: m1`, never a head). The push is not late and not own: the head goes
    back from `x` to `m2`, and the only valid base is `m2`, which `x` made wrong. A read of the real head `x` is
-   then ignored, since `x` is a past head: the runs on `m2` land on `x` without it.
+   then ignored, since `x` is a past head. The next merge, tested on `m2`, finds `x`: the job refuses it
+   (`target_moved`), the queue forgets the target and takes the read of `x`, and the run restarts on `x`
+   (`a_target_that_moved_at_merge_time_restarts_the_groups_on_the_read_head`).
 
-### Limit
+## `MergeGuard.tla`: a merge lands only on what its run tested (principle IV)
 
-The merge job does not compare the real head with the head of the run (only `fast_forward` sends the tested
-SHA), so a merge that the queue asks before the webhook of an outside push lands without that push. The design
-relies on the branch protection that keeps the target to the App (`specs/GITHUB.md`), and the queue tests again
-once it learns the push.
+A run tests its group on a base and the PRs of its predecessors; its merge must land on that base followed by the
+merges of those predecessors, and on nothing else. Two checks keep it: the chain (`expected_head`: each
+predecessor recorded on the head before it, else the group restarts) and the head (the job reads the real head
+and merges only on the expected one, else `target_moved`). What the queue believes of the head is any commit of
+the branch, a past one included, so the model holds whatever `target_pushed` decides, its bugs included. Not
+modeled: the window between the read of the head and the merge, which the SCM gives no way to close.
+
+| Row                                        | Fault or case                                      |
+| ------------------------------------------ | -------------------------------------------------- |
+| `merge-guard-no-chain-check`               | plan does not check the chain                      |
+| `merge-guard-no-head-check`                | the job merges whatever the real head              |
+| `witness-merge-guard-all-merged`           | every PR merges                                    |
+| `witness-merge-guard-merged-after-outside` | a merge is refused, then the PR merges on the push |
 
 ## Pins: the model follows the code
 

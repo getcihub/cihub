@@ -11,6 +11,10 @@ bug-target-head-read-before-merge-fact	TargetHead	TargetHead	MaxReads=1	NoSpurio
 bug-target-head-read-of-own-head	TargetHead	TargetHead	MaxReads=1;ReadChecksAgain=TRUE	OutsideIsNotLost	CIH-138
 bug-target-head-reversed-merge-webhooks	TargetHead	TargetHead	Merges={"m1", "m2"};Outside=FALSE	NoSpuriousRestart	CIH-140
 bug-target-head-head-moves-back	TargetHead	TargetHead	Merges={"m1", "m2"}	OutsideIsNotLost	CIH-137
-limit-target-head-merge-before-outside-webhook	TargetHead	TargetHead	-	MergeLandsOnWhatWasTested	-
 witness-target-head-outside-seen	TargetHead	TargetHead	-	OutsideNeverSeen	-
 witness-target-head-all-merged	TargetHead	TargetHead	-	NotAllMerged	-
+merge-guard	MergeGuard	MergeGuard	-	pass	-
+merge-guard-no-chain-check	MergeGuard	MergeGuard	Fault="no_chain_check"	MergeLandsOnWhatWasTested	-
+merge-guard-no-head-check	MergeGuard	MergeGuard	Fault="no_head_check"	MergeLandsOnWhatWasTested	-
+witness-merge-guard-all-merged	MergeGuard	MergeGuard	-	NotAllMerged	-
+witness-merge-guard-merged-after-outside	MergeGuard	MergeGuard	-	NeverMergedAfterOutside	-

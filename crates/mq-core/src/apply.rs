@@ -380,6 +380,15 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 || snapshot
                     .direct_merge_candidate()
                     .is_some_and(|candidate| candidate.id == *item_id);
+            // The merge job checked this head before it merged.
+            let parent = snapshot
+                .items
+                .get(item_id)
+                .filter(|item| item.state == ItemState::TestsPassed)
+                .and_then(|item| {
+                    let group = snapshot.groups.get(&item.group_id?)?;
+                    snapshot.expected_head(group, item.id)
+                });
             let outcome = request(
                 snapshot,
                 event,
@@ -391,9 +400,32 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             if outcome == Outcome::Applied && is_own {
                 snapshot.target.own_shas.insert(merged_sha.clone());
             }
+            if let (Outcome::Applied, Some(parent)) = (&outcome, parent) {
+                snapshot
+                    .target
+                    .merge_parents
+                    .insert(merged_sha.clone(), parent);
+            }
             // tla: end merge-succeeded-is-own
             outcome
         }
+        // tla: begin merge-failed-target-moved
+        // The target is not where the snapshot thought: forget what it knows
+        // of it, so that every group restarts and the next read of the head
+        // counts, even of a head that it saw before. The item stays: it
+        // merges after a new run.
+        EventKind::MergeFailed {
+            error: JobError::TargetMoved,
+            ..
+        } => {
+            let target = &mut snapshot.target;
+            target.head = None;
+            target.recent_heads.clear();
+            target.valid_bases.clear();
+
+            Outcome::Applied
+        }
+        // tla: end merge-failed-target-moved
         EventKind::MergeFailed {
             item_id,
             direct: true,

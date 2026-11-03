@@ -34,6 +34,9 @@ closed_enum! {
         RepeatedServerErrors,
         /// Merge: the head of the PR changed since the test (the `sha` guard).
         HeadChanged,
+        /// Merge: the head of the target branch is not the one on which the
+        /// run expects the merge to land; the job merged nothing.
+        TargetMoved,
         /// Merge: the PR was already merged when the job read it; the queue
         /// did not merge it.
         PrAlreadyMerged,

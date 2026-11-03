@@ -107,6 +107,7 @@ pub(super) const fn assembly_reason(error: JobError) -> Reason {
         | JobError::MergeAlreadyInProgress
         | JobError::RepeatedServerErrors
         | JobError::HeadChanged
+        | JobError::TargetMoved
         | JobError::PrAlreadyMerged
         | JobError::DirectMergeUnavailable => Reason::StartTestRunInvalidEvent,
     }

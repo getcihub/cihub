@@ -544,6 +544,111 @@ fn a_late_push_of_the_queue_after_a_read_of_the_head_changes_nothing() {
     assert_replays(&w);
 }
 
+fn expected_head(w: &mut World, pr_number: u64) -> Option<String> {
+    w.reconcile()
+        .desired
+        .merges
+        .iter()
+        .find(|m| m.pr_number == pr_number)
+        .and_then(|m| m.expected_head.clone())
+}
+
+fn target_moved(w: &mut World, pr_number: u64) {
+    let item_id = w.item(pr_number).unwrap().id;
+    w.fact(
+        Actor::Bot,
+        EventKind::MergeFailed {
+            item_id,
+            direct: false,
+            error: JobError::TargetMoved,
+        },
+    );
+}
+
+#[test]
+fn a_merge_expects_the_base_then_the_merge_of_each_predecessor() {
+    let mut w = World::new(settings(window(3)));
+    let base = w.snapshot.target.head.clone().unwrap().value;
+    for pr in 1..=2 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=2 {
+        w.report(pr, CheckConclusion::Success);
+    }
+
+    assert_eq!(expected_head(&mut w, 1), Some(base));
+
+    merge(&mut w, 1, "m1");
+
+    assert_eq!(expected_head(&mut w, 2), Some("m1".into()));
+    assert_replays(&w);
+}
+
+/// CIH-137: the late push of `m2` still moves the head back from `x`, and PR 3
+/// passes on `m2`; its merge expects `m2` and the job finds `x`: it merges
+/// nothing, the queue forgets the target, takes the next read of `x`, and tests
+/// again.
+#[test]
+fn a_target_that_moved_at_merge_time_restarts_the_groups_on_the_read_head() {
+    let mut w = World::new(settings(window(3)));
+    for pr in 1..=3 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=3 {
+        w.report(pr, CheckConclusion::Success);
+    }
+    merge(&mut w, 1, "m1");
+    merge(&mut w, 2, "m2");
+    push_from(&mut w, "m2", "x");
+    push_from(&mut w, "m1", "m2");
+    // PR 3 is tested again on `m2`, the wrong head.
+    w.assemble_all();
+    w.report(3, CheckConclusion::Success);
+
+    assert_eq!(expected_head(&mut w, 3), Some("m2".into()));
+
+    target_moved(&mut w, 3);
+    let read = w.push_target_to(Actor::System, "x".into());
+    w.reconcile();
+
+    assert_eq!(read, Outcome::Applied);
+    assert_eq!(w.snapshot.target.head.clone().unwrap().value, "x");
+    assert_eq!(w.state(3), Some(ItemState::Testing));
+    assert_eq!(
+        w.item(3)
+            .unwrap()
+            .group_id
+            .map(|g| w.snapshot.groups[&g].base_sha.clone()),
+        Some("x".into())
+    );
+    assert_replays(&w);
+}
+
+#[test]
+fn a_predecessor_that_landed_elsewhere_dissolves_the_group() {
+    let mut w = World::new(settings(window(3)));
+    for pr in 1..=2 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.assemble_all();
+    for pr in 1..=2 {
+        w.report(pr, CheckConclusion::Success);
+    }
+    merge(&mut w, 1, "m1");
+
+    // The log records PR 1 on another head than the base of the group of PR 2.
+    w.snapshot
+        .target
+        .merge_parents
+        .insert("m1".into(), "elsewhere".into());
+    let plan = w.reconcile();
+
+    assert!(plan.desired.merges.iter().all(|m| m.pr_number != 2));
+    assert!(decided_with(&w, Reason::ManualPushToTargetBranch));
+}
+
 #[test]
 fn a_late_push_changes_nothing() {
     let mut w = world();

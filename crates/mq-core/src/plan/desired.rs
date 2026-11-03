@@ -53,12 +53,14 @@ pub(super) fn desired(
             .filter(|i| merge_ready(s, i))
             .filter_map(|i| {
                 let run = s.runs.get(&i.verified_by_run_id?)?;
+                let group = s.groups.get(&i.group_id?)?;
                 Some(Merge {
                     item_id: i.id,
                     pr_number: i.pr_number,
                     head_sha: i.head_sha.clone(),
                     run_id: Some(run.id),
                     tested_sha: run.test_sha.clone()?,
+                    expected_head: Some(s.expected_head(group, i.id)?),
                 })
             })
             .chain(direct_merge(s, settings).map(|i| Merge {
@@ -67,6 +69,7 @@ pub(super) fn desired(
                 head_sha: i.head_sha.clone(),
                 run_id: None,
                 tested_sha: i.head_sha.clone(),
+                expected_head: None,
             }))
             .collect()
     };

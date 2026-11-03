@@ -7,6 +7,8 @@
 (*                                                                         *)
 (* The facts (the CI reports a run, the SCM answers a merge) can happen at *)
 (* any time; the decisions of `plan` happen only when their guard holds.   *)
+(* The head check of the merge job is left out (`MergeGuard.tla`), so that *)
+(* this model checks the order rule alone.                                 *)
 (* Not modeled: batches, bisection, the failure budget, the speculation    *)
 (* window, direct merge, `not_ready` and `cancelled`, outside pushes, and  *)
 (* the inbox between a fact and its decision.                              *)
@@ -14,7 +16,7 @@
 \* The code that this model copies (scripts/tla-pins.sh): a change of it
 \* fails `mise run lint` until the model is read against it again.
 \* pin crates/mq-core/src/graph.rs fn insertion_index f0f7c79d62c5
-\* pin crates/mq-core/src/apply.rs region merge-succeeded-is-own 1058d07a58e0
+\* pin crates/mq-core/src/apply.rs region merge-succeeded-is-own 9f057466ec8d
 
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 

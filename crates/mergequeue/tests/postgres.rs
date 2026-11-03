@@ -6176,6 +6176,71 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
 /// A PR merged outside the queue while in test: the merge job does not claim
 /// it, the item is `manual_merge`, and the PR behind it is tested again on what
 /// landed, then merged.
+/// A push from outside whose webhook is lost: the merge job finds a head that
+/// the run did not test, merges nothing, and the queue reads the head and
+/// tests the PR again on it (`specs/tla/MergeGuard.tla`).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_merge_waits_for_a_new_run_when_the_target_moved(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(open_green_pr(&sim, &main, 1), 1);
+
+    sim.comment(&repo(), 1, &alice(), "/cihub merge").unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let first = q.runs_in_progress().await[0].1.clone();
+    let outside = sim.commit(&repo(), &main, &[("b.txt", Some("b"))]).unwrap();
+    sim.push(&repo(), "main", &outside, &alice()).unwrap();
+    sim.take_deliveries();
+
+    sim.report_check(&repo(), &first, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(current_items(&pool).await[0].1, "testing");
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let moved: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE type = 'merge.failed'
+         AND payload->>'error' = 'target_moved'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    drop(tx);
+
+    assert_eq!(moved, 1);
+
+    let second = q.runs_in_progress().await[0].1.clone();
+    sim.report_check(&repo(), &second, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        current_items(&pool).await[0],
+        (1, "merged".into(), "merge_graph_merge".into())
+    );
+    let head = sim
+        .branch_head(&repo(), "main", JobClass::Repair)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        sim.is_ancestor(&repo(), &outside, &head, JobClass::Repair)
+            .await
+            .unwrap()
+    );
+}
+
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;

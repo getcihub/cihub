@@ -49,7 +49,12 @@ pub(in crate::plan) fn validity(
 
         let (reason, cause) = if let Some(left) = left {
             left
-        } else if !s.target.valid_bases.contains(&group.base_sha) {
+        } else if !s.target.valid_bases.contains(&group.base_sha)
+            || group
+                .item_ids
+                .first()
+                .is_some_and(|first| s.expected_head(group, *first).is_none())
+        {
             (
                 Reason::ManualPushToTargetBranch,
                 s.target.head.as_ref().map(|h| h.fact_id),
