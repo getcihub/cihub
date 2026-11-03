@@ -2,7 +2,7 @@
 name: Image
 
 # Builds the server image of CIHub for each release, on a
-# native runner per architecture, then joins the two in one manifest.
+# native runner per architecture, then joins the two in one manifest. It also attaches the source maps of the console.
 
 on:
   release:
@@ -200,3 +200,37 @@ jobs:
 
       - name: Sign the chart
         run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/cihub:${TAG#v}"
+
+  sourcemaps:
+    name: Source maps
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The console stage of the Dockerfile: a Debug ID depends on the build path, so the maps are those of the image.
+      - name: Build the console
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: console
+          platforms: linux/amd64
+          outputs: type=local,dest=console
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tar -czf console-sourcemaps.tar.gz -C console/src/apps/console/dist assets
+          gh release upload "$TAG" console-sourcemaps.tar.gz --clobber
